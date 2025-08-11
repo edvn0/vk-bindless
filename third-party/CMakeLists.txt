@@ -1,5 +1,7 @@
 add_subdirectory(vk-bootstrap)
 add_subdirectory(VulkanMemoryAllocator)
+set(GLFW_BUILD_WAYLAND ON)
+set(GLFW_BUILD_X11 OFF)
 add_subdirectory(glfw)
 if (ENABLE_TESTING)
 add_subdirectory(doctest)

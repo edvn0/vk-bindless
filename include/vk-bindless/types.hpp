@@ -7,15 +7,15 @@
 
 namespace VkBindless {
 
-template <typename T> using TypeDeleter = decltype(+[](const T *) -> void {});
-
-template <typename T> using Unique = std::unique_ptr<T, TypeDeleter<T>>;
-
-template <typename T>
-constexpr auto default_deleter = +[](const T *) -> void {};
-
 namespace detail {
-std::string_view vk_result_to_string(VkResult result);
+
+struct TypeDeleter {
+  template <typename K> auto operator()(const K *ptr) const -> void {
+    delete ptr;
+  }
+};
+
+auto vk_result_to_string(VkResult result) -> std::string_view;
 
 auto log_verification(std::string &&message) -> void;
 
@@ -24,6 +24,9 @@ auto log_verification(std::format_string<Args...> fmt, Args &&...args) -> void {
   log_verification(std::format(fmt, std::forward<Args>(args)...));
 }
 } // namespace detail
+template <typename T> using Unique = std::unique_ptr<T, detail::TypeDeleter>;
+
+template <typename T> constexpr auto default_deleter = detail::TypeDeleter{};
 
 #ifdef NDEBUG
 #define VK_VERIFY(call) (call)

@@ -231,8 +231,7 @@ auto IAllocator::create_allocator(VkInstance instance,
                                   VkPhysicalDevice physical_device,
                                   VkDevice device) -> Unique<IAllocator> {
   return Unique<IAllocator>(
-      new VmaAllocatorImpl(instance, physical_device, device),
-      [](const IAllocator *allocator) { delete allocator; });
+      new VmaAllocatorImpl(instance, physical_device, device));
 }
 
 } // namespace VkBindless
