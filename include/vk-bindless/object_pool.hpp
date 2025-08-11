@@ -13,36 +13,26 @@
 
 namespace VkBindless {
 
-enum class PoolError
-{
-  InvalidHandle,
-  StaleHandle,
-  IndexOutOfBounds
-};
+enum class PoolError { InvalidHandle, StaleHandle, IndexOutOfBounds };
 
-constexpr auto
-to_string(const PoolError error) -> std::string_view
-{
+constexpr auto to_string(const PoolError error) -> std::string_view {
   switch (error) {
-    case PoolError::InvalidHandle:
-      return "Invalid handle";
-    case PoolError::StaleHandle:
-      return "Stale handle";
-    case PoolError::IndexOutOfBounds:
-      return "Index out of bounds";
+  case PoolError::InvalidHandle:
+    return "Invalid handle";
+  case PoolError::StaleHandle:
+    return "Stale handle";
+  case PoolError::IndexOutOfBounds:
+    return "Index out of bounds";
   }
   return "Unknown error";
 }
 
-template<typename ObjectType, typename ImplObjectType>
-class Pool
-{
+template <typename ObjectType, typename ImplObjectType> class Pool {
   static constexpr std::uint32_t list_end_sentinel = 0xffffffff;
 
-  struct PoolEntryMetadata
-  {
-    std::uint32_t generation{ 1 };
-    std::uint32_t next_free{ list_end_sentinel };
+  struct PoolEntryMetadata {
+    std::uint32_t generation{1};
+    std::uint32_t next_free{list_end_sentinel};
   };
 
   std::uint32_t free_list_head = list_end_sentinel;
@@ -52,8 +42,7 @@ class Pool
 
 public:
   [[nodiscard]]
-  auto create(ImplObjectType&& impl) -> Handle<ObjectType>
-  {
+  auto create(ImplObjectType &&impl) -> Handle<ObjectType> {
     std::uint32_t index = 0;
     if (free_list_head != list_end_sentinel) {
       index = free_list_head;
@@ -70,8 +59,7 @@ public:
   }
 
   [[nodiscard]]
-  auto destroy(Handle<ObjectType> handle) -> std::expected<void, PoolError>
-  {
+  auto destroy(Handle<ObjectType> handle) -> std::expected<void, PoolError> {
     if (!handle.valid()) {
       return std::unexpected(PoolError::InvalidHandle);
     }
@@ -90,7 +78,7 @@ public:
     }
 
     objects[index] = ImplObjectType{};
-    auto& data = metadata[index];
+    auto &data = metadata[index];
     ++data.generation;
     data.next_free = free_list_head;
     free_list_head = index;
@@ -100,8 +88,7 @@ public:
 
   [[nodiscard]]
   auto get(Handle<ObjectType> handle)
-    -> std::expected<ImplObjectType*, PoolError>
-  {
+      -> std::expected<ImplObjectType *, PoolError> {
     if (!handle.valid()) {
       return std::unexpected(PoolError::InvalidHandle);
     }
@@ -118,14 +105,12 @@ public:
     return &objects[index];
   }
 
-  [[nodiscard]] auto get(const Holder<Handle<ObjectType>>& holder)
-  {
+  [[nodiscard]] auto get(const Holder<Handle<ObjectType>> &holder) {
     return get(static_cast<Handle<ObjectType>>(holder));
   }
 
   [[nodiscard]] auto get(Handle<ObjectType> handle) const
-    -> std::expected<const ImplObjectType*, PoolError>
-  {
+      -> std::expected<const ImplObjectType *, PoolError> {
     if (!handle.valid()) {
       return std::unexpected(PoolError::InvalidHandle);
     }
@@ -145,8 +130,7 @@ public:
   [[nodiscard]] auto size() const -> std::uint32_t { return num_objects; }
   [[nodiscard]] auto empty() const -> bool { return num_objects == 0; }
 
-  auto clear() -> void
-  {
+  auto clear() -> void {
     free_list_head = list_end_sentinel;
     objects.clear();
     metadata.clear();
@@ -154,8 +138,7 @@ public:
   }
 
   [[nodiscard]]
-  auto unsafe_handle(const std::uint32_t index) const -> Handle<ObjectType>
-  {
+  auto unsafe_handle(const std::uint32_t index) const -> Handle<ObjectType> {
     if (index >= objects.size()) {
       return Handle<ObjectType>();
     }
@@ -163,8 +146,7 @@ public:
   }
 
   [[nodiscard]]
-  auto find_object(const ImplObjectType* obj) -> Handle<ObjectType>
-  {
+  auto find_object(const ImplObjectType *obj) -> Handle<ObjectType> {
     if (nullptr == obj || objects.empty()) {
       return Handle<ObjectType>();
     }
@@ -175,18 +157,16 @@ public:
     }
 
     const auto index =
-      static_cast<std::uint32_t>(std::distance(objects.begin(), found));
+        static_cast<std::uint32_t>(std::distance(objects.begin(), found));
     return unsafe_handle(index);
   }
 
-  auto at(const std::uint32_t index) -> decltype(objects.at(0))
-  {
+  auto at(const std::uint32_t index) -> decltype(objects.at(0)) {
     assert(!objects.empty() && "Pool is empty");
     assert(index < objects.size() && "Index out of bounds");
     return objects.at(index);
   }
-  auto at(const std::uint32_t index) const -> decltype(objects.at(0))
-  {
+  auto at(const std::uint32_t index) const -> decltype(objects.at(0)) {
     assert(!objects.empty() && "Pool is empty");
     assert(index < objects.size() && "Index out of bounds");
     return objects.at(index);

@@ -1,3 +1,4 @@
+#include <vulkan/vulkan_core.h>
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest/doctest.h"
 
@@ -8,10 +9,10 @@
 
 using namespace VkBindless;
 
-TEST_CASE("Vulkan Context Creation")
-{
+TEST_CASE("Vulkan Context Creation") {
   ContextError error;
-  auto context = Context::create(VK_NULL_HANDLE);
+  auto context =
+      Context::create([](auto) -> VkSurfaceKHR { return VK_NULL_HANDLE; });
   CHECK(context.has_value() == false);
   CHECK(context.error().message == "Failed to select Vulkan physical device");
 
@@ -21,29 +22,25 @@ TEST_CASE("Vulkan Context Creation")
   // CHECK(context.has_value() == true);
 }
 
-struct DummyTag
-{};
-struct DummyImpl
-{
+struct DummyTag {};
+struct DummyImpl {
   int value;
 
   explicit DummyImpl(int v = 0) : value(v) {}
 
-  auto operator<=>(const DummyImpl& other) const = default;
+  auto operator<=>(const DummyImpl &other) const = default;
 };
 
 namespace VkBindless {
-auto context_destroy(IContext*, Handle<DummyTag>) -> void
-{
+auto context_destroy(IContext *, Handle<DummyTag>) -> void {
   // No-op for this test
 }
-}
+} // namespace VkBindless
 
-TEST_CASE("Pool basic create/destroy")
-{
+TEST_CASE("Pool basic create/destroy") {
   Pool<DummyTag, DummyImpl> pool;
 
-  auto handle = pool.create(DummyImpl{ 42 });
+  auto handle = pool.create(DummyImpl{42});
   REQUIRE(handle.valid());
 
   auto obj = pool.get(handle);
@@ -56,11 +53,10 @@ TEST_CASE("Pool basic create/destroy")
   REQUIRE(pool.get(handle).error() == PoolError::StaleHandle);
 }
 
-TEST_CASE("Pool double destroy is detected")
-{
+TEST_CASE("Pool double destroy is detected") {
   Pool<DummyTag, DummyImpl> pool;
-  auto handle = pool.create(DummyImpl{ 7 });
-  auto second_handle = pool.create(DummyImpl{ 7 });
+  auto handle = pool.create(DummyImpl{7});
+  auto second_handle = pool.create(DummyImpl{7});
 
   CHECK(pool.destroy(handle).has_value());
   auto result = pool.destroy(handle);
@@ -68,29 +64,26 @@ TEST_CASE("Pool double destroy is detected")
   REQUIRE(result.error() == PoolError::StaleHandle);
 }
 
-TEST_CASE("Pool reuse handle slot")
-{
+TEST_CASE("Pool reuse handle slot") {
   Pool<DummyTag, DummyImpl> pool;
-  auto h1 = pool.create(DummyImpl{ 1 });
+  auto h1 = pool.create(DummyImpl{1});
   CHECK(pool.destroy(h1).has_value());
-  auto h2 = pool.create(DummyImpl{ 2 });
+  auto h2 = pool.create(DummyImpl{2});
 
   CHECK(h1.index() == h2.index());
   CHECK(h1.generation() != h2.generation());
 }
 
-TEST_CASE("Pool clear removes all")
-{
+TEST_CASE("Pool clear removes all") {
   Pool<DummyTag, DummyImpl> pool;
-  auto h1 = pool.create(DummyImpl{ 9 });
+  auto h1 = pool.create(DummyImpl{9});
   pool.clear();
   auto value = pool.get(h1);
   REQUIRE(!value.has_value());
   CHECK(value.error() == PoolError::IndexOutOfBounds);
 }
 
-TEST_CASE("Pool get with invalid handle returns error")
-{
+TEST_CASE("Pool get with invalid handle returns error") {
   Pool<DummyTag, DummyImpl> pool;
   Handle<DummyTag> invalid;
   auto result = pool.get(invalid);
@@ -98,8 +91,7 @@ TEST_CASE("Pool get with invalid handle returns error")
   CHECK(result.error() == PoolError::InvalidHandle);
 }
 
-TEST_CASE("Pool destroy with invalid handle returns error")
-{
+TEST_CASE("Pool destroy with invalid handle returns error") {
   Pool<DummyTag, DummyImpl> pool;
   Handle<DummyTag> invalid;
   auto result = pool.destroy(invalid);
@@ -107,20 +99,18 @@ TEST_CASE("Pool destroy with invalid handle returns error")
   CHECK(result.error() == PoolError::InvalidHandle);
 }
 
-TEST_CASE("Pool unsafe_handle returns valid handle for in-bounds index")
-{
+TEST_CASE("Pool unsafe_handle returns valid handle for in-bounds index") {
   Pool<DummyTag, DummyImpl> pool;
-  auto h = pool.create(DummyImpl{ 1 });
+  auto h = pool.create(DummyImpl{1});
   auto raw = pool.unsafe_handle(h.index());
   auto ptr = pool.get(raw);
   REQUIRE(ptr.has_value());
   CHECK(ptr.value()->value == 1);
 }
 
-TEST_CASE("Pool find_object returns correct handle")
-{
+TEST_CASE("Pool find_object returns correct handle") {
   Pool<DummyTag, DummyImpl> pool;
-  auto h = pool.create(DummyImpl{ 99 });
+  auto h = pool.create(DummyImpl{99});
   auto ptr = pool.get(h);
   REQUIRE(ptr.has_value());
 

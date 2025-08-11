@@ -1,9 +1,9 @@
 #pragma once
 
-#include "types.hpp"
 #include "vk-bindless/graphics_context.hpp"
 #include "vk-bindless/object_pool.hpp"
 #include "vk-bindless/texture.hpp"
+#include "vk-bindless/types.hpp"
 
 #include <expected>
 #include <functional>
@@ -13,53 +13,43 @@
 
 namespace VkBindless {
 
-class Context final : public IContext
-{
+class Context final : public IContext {
 public:
   Context() = default;
   ~Context() override;
 
-  static auto create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
-    -> std::expected<std::unique_ptr<IContext>, ContextError>;
+  static auto create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
+      -> std::expected<std::unique_ptr<IContext>, ContextError>;
 
-  [[nodiscard]] auto get_device() const -> const VkDevice& override;
+  [[nodiscard]] auto get_device() const -> const VkDevice & override;
   [[nodiscard]] auto get_physical_device() const
-    -> const VkPhysicalDevice& override;
-  [[nodiscard]] auto get_instance() const -> const VkInstance& override;
+      -> const VkPhysicalDevice & override;
+  [[nodiscard]] auto get_instance() const -> const VkInstance & override;
 
   [[nodiscard]] auto get_queue(Queue) const
-    -> std::expected<VkQueue, ContextError> override;
+      -> std::expected<VkQueue, ContextError> override;
   [[nodiscard]] auto get_queue_family_index(Queue) const
-    -> std::expected<std::uint32_t, ContextError> override;
+      -> std::expected<std::uint32_t, ContextError> override;
 
-  [[nodiscard]] auto get_queue_unsafe(Queue) const -> const VkQueue& override;
+  [[nodiscard]] auto get_queue_unsafe(Queue) const -> const VkQueue & override;
   [[nodiscard]] auto get_queue_family_index_unsafe(Queue) const
-    -> std::uint32_t override;
+      -> std::uint32_t override;
 
-  [[nodiscard]] auto needs_update() -> bool& override
-  {
+  [[nodiscard]] auto needs_update() -> bool & override {
     return resource_bindings_updated;
   }
   auto update_resource_bindings() -> void override;
-  auto pre_frame_task(PreFrameCallback&& callback) -> void override
-  {
-    pre_frame_callbacks.emplace_back(std::move(callback));
+  auto pre_frame_task(PreFrameCallback &&callback) -> void override {
+    pre_frame_callbacks.push_back(std::move(callback));
   }
-  auto get_allocator_implementation() -> IAllocator& override;
+  auto get_allocator_implementation() -> IAllocator & override;
 
-#define DESTROY_HANDLE_X_MACRO(type, name)                                     \
-  auto destroy_##name(type handle)->void override;
+#define DESTROY_HANDLE_X_MACRO(type) auto destroy(type handle) -> void override;
   FOR_EACH_HANDLE_TYPE(DESTROY_HANDLE_X_MACRO)
 #undef DESTROY_HANDLE_X_MACRO
 
-  auto get_texture_pool() -> TexturePool& override
-  {
-    return texture_pool;
-  }
-
-  auto get_sampler_pool() -> SamplerPool& override {
-    return sampler_pool;
-  }
+  auto get_texture_pool() -> TexturePool & override { return texture_pool; }
+  auto get_sampler_pool() -> SamplerPool & override { return sampler_pool; }
 
 private:
   vkb::Instance vkb_instance{};
@@ -78,30 +68,28 @@ private:
   TexturePool texture_pool{};
   SamplerPool sampler_pool{};
 
-  std::uint32_t current_max_textures{ 16 };
-  std::uint32_t current_max_samplers{ 16 };
-  std::uint32_t current_max_acceleration_structures{ 16 };
+  std::uint32_t current_max_textures{16};
+  std::uint32_t current_max_samplers{16};
+  std::uint32_t current_max_acceleration_structures{16};
   bool resource_bindings_updated = false;
-  VkDescriptorSetLayout descriptor_set_layout{ VK_NULL_HANDLE };
-  VkDescriptorSet descriptor_set{ VK_NULL_HANDLE };
-  VkDescriptorPool descriptor_pool{ VK_NULL_HANDLE };
+  VkDescriptorSetLayout descriptor_set_layout{VK_NULL_HANDLE};
+  VkDescriptorSet descriptor_set{VK_NULL_HANDLE};
+  VkDescriptorPool descriptor_pool{VK_NULL_HANDLE};
   Handle<Texture> dummy_texture;
   Handle<Sampler> dummy_sampler;
 
-  Unique<IAllocator>
-    allocator_impl {nullptr, default_deleter<IAllocator>};
+  Unique<IAllocator> allocator_impl{nullptr, default_deleter<IAllocator>};
 
   std::deque<PreFrameCallback> pre_frame_callbacks{};
 
   static auto get_dsl_binding(std::uint32_t, VkDescriptorType, uint32_t)
-    -> VkDescriptorSetLayoutBinding;
-  auto grow_descriptor_pool(std::uint32_t textures,
-                            std::uint32_t samplers,
-                            std::uint32_t acceleration)
-    -> std::expected<void, ContextError>;
+      -> VkDescriptorSetLayoutBinding;
+  auto grow_descriptor_pool(std::uint32_t textures, std::uint32_t samplers)
+      -> std::expected<void, ContextError>;
   auto create_placeholder_resources() -> void;
+  auto update_descriptor_sets() -> std::expected<void, ContextError>;
 
   using base = IContext;
 };
 
-}
+} // namespace VkBindless

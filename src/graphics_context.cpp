@@ -2,18 +2,13 @@
 
 namespace VkBindless {
 
-auto
-context_destroy(IContext* context, const TextureHandle handle) -> void
-{
-  if (context != nullptr)
-    context->destroy_texture(handle);
-}
+#define CONTEXT_DESTROY_HANDLE_X_MACRO(type)                                   \
+  auto context_destroy(IContext *ctx, type h) -> void {                        \
+    if (ctx != nullptr) {                                                      \
+      ctx->destroy(h);                                                         \
+    }                                                                          \
+  }
+FOR_EACH_HANDLE_TYPE(CONTEXT_DESTROY_HANDLE_X_MACRO)
+#undef CONTEXT_DESTROY_HANDLE_X_MACRO
 
-auto
-context_destroy(IContext* context, const SamplerHandle handle) -> void
-{
-  if (context != nullptr)
-    context->destroy_sampler(handle);
-}
-
-}
+} // namespace VkBindless

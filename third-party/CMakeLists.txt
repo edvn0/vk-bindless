@@ -1,0 +1,6 @@
+add_subdirectory(vk-bootstrap)
+add_subdirectory(VulkanMemoryAllocator)
+add_subdirectory(glfw)
+if (ENABLE_TESTING)
+add_subdirectory(doctest)
+endif()

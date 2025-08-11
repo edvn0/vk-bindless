@@ -16,51 +16,41 @@
 #include <vector>
 
 #define MAKE_BIT_FIELD(E)                                                      \
-  constexpr E operator|(const E lhs, const E rhs)                              \
-  {                                                                            \
+  constexpr E operator|(const E lhs, const E rhs) {                            \
     const auto underlying_lhs = std::to_underlying(lhs);                       \
     const auto underlying_rhs = std::to_underlying(rhs);                       \
     return static_cast<E>(underlying_lhs | underlying_rhs);                    \
   }                                                                            \
-  constexpr E operator&(const E lhs, const E rhs)                              \
-  {                                                                            \
+  constexpr E operator&(const E lhs, const E rhs) {                            \
     const auto underlying_lhs = std::to_underlying(lhs);                       \
     const auto underlying_rhs = std::to_underlying(rhs);                       \
     return static_cast<E>(underlying_lhs & underlying_rhs);                    \
-  } \
-  constexpr bool operator!(const E value) \
-  {                                                                            \
+  }                                                                            \
+  constexpr bool operator!(const E value) {                                    \
     return std::to_underlying(value) == 0;                                     \
   }                                                                            \
-  constexpr bool operator==(const E lhs, const E rhs)                          \
-  {                                                                            \
+  constexpr bool operator==(const E lhs, const E rhs) {                        \
     return std::to_underlying(lhs) == std::to_underlying(rhs);                 \
   }                                                                            \
-  constexpr bool operator!=(const E lhs, const E rhs)                          \
-  {                                                                            \
+  constexpr bool operator!=(const E lhs, const E rhs) {                        \
     return std::to_underlying(lhs) != std::to_underlying(rhs);                 \
   }                                                                            \
-  constexpr E& operator|=(E& lhs, const E rhs)                                 \
-  {                                                                            \
+  constexpr E &operator|=(E &lhs, const E rhs) {                               \
     lhs = lhs | rhs;                                                           \
-    return lhs;                                                               \
+    return lhs;                                                                \
   }                                                                            \
-  constexpr E& operator&=(E& lhs, const E rhs)                                 \
-  {                                                                            \
+  constexpr E &operator&=(E &lhs, const E rhs) {                               \
     lhs = lhs & rhs;                                                           \
-    return lhs;                                                               \
+    return lhs;                                                                \
   }                                                                            \
-  constexpr E operator~(const E value)                                        \
-  {                                                                            \
+  constexpr E operator~(const E value) {                                       \
     return static_cast<E>(~std::to_underlying(value));                         \
-  }                                                                            \
+  }
 
 namespace VkBindless {
 
-struct TextureError
-{
-  enum class Code : std::uint8_t
-  {
+struct TextureError {
+  enum class Code : std::uint8_t {
     InvalidHandle,
     StaleHandle,
     IndexOutOfBounds
@@ -70,8 +60,7 @@ struct TextureError
   Code code;
 };
 
-enum class TextureUsageFlags : std::uint8_t
-{
+enum class TextureUsageFlags : std::uint8_t {
   TransferSource = 1 << 0,
   TransferDestination = 1 << 1,
   Sampled = 1 << 2,
@@ -83,81 +72,75 @@ enum class TextureUsageFlags : std::uint8_t
 };
 MAKE_BIT_FIELD(TextureUsageFlags);
 
-struct VkTextureDescription
-{
-  std::span<const std::uint8_t> data{}; // This can absolutely be empty, but if it is
-                                  // not, it must be a valid image
-  VkFormat format{ VK_FORMAT_UNDEFINED };
-  VkExtent3D extent{ 1, 1, 1 };
-  TextureUsageFlags usage_flags{ TextureUsageFlags::Sampled |
-                                 TextureUsageFlags::TransferSource |
-                                 TextureUsageFlags::TransferDestination };
-  std::uint32_t layers { 1 };
-  std::optional<std::uint32_t> mip_levels{ std::nullopt }; // If not set, it will be calculated from the extent
-  VkSampleCountFlagBits sample_count{ VK_SAMPLE_COUNT_1_BIT };
-  VkImageTiling tiling{ VK_IMAGE_TILING_OPTIMAL };
-  VkImageLayout initial_layout{ VK_IMAGE_LAYOUT_UNDEFINED };
-  bool is_owning {true};
+struct VkTextureDescription {
+  std::span<const std::uint8_t> data{}; // This can absolutely be empty, but if
+                                        // it is not, it must be a valid image
+  VkFormat format{VK_FORMAT_UNDEFINED};
+  VkExtent3D extent{1, 1, 1};
+  TextureUsageFlags usage_flags{TextureUsageFlags::Sampled |
+                                TextureUsageFlags::TransferSource |
+                                TextureUsageFlags::TransferDestination};
+  std::uint32_t layers{1};
+  std::optional<std::uint32_t> mip_levels{
+      std::nullopt}; // If not set, it will be calculated from the extent
+  VkSampleCountFlagBits sample_count{VK_SAMPLE_COUNT_1_BIT};
+  VkImageTiling tiling{VK_IMAGE_TILING_OPTIMAL};
+  VkImageLayout initial_layout{VK_IMAGE_LAYOUT_UNDEFINED};
+  bool is_owning{true};
 
   std::string_view debug_name;
 };
 
-class VkTexture
-{
+class VkTexture {
 public:
   VkTexture() = default;
-  VkTexture(IContext&, const VkTextureDescription&);
+  VkTexture(IContext &, const VkTextureDescription &);
 
-  static auto create(IContext&, const VkTextureDescription&)
-    -> Holder<TextureHandle>;
+  static auto create(IContext &, const VkTextureDescription &)
+      -> Holder<TextureHandle>;
 
-  [[nodiscard]] auto get_image_view() const -> const VkImageView&
-  {
+  [[nodiscard]] auto get_image_view() const -> const VkImageView & {
     return image_view;
   }
-  [[nodiscard]] auto get_storage_image_view() const -> const VkImageView&
-  {
+  [[nodiscard]] auto get_storage_image_view() const -> const VkImageView & {
     return storage_image_view;
   }
-  [[nodiscard]] auto get_sampler() const -> const VkSampler& { return sampler; }
+  [[nodiscard]] auto get_sampler() const -> const VkSampler & {
+    return sampler;
+  }
   [[nodiscard]] auto is_sampled() const -> bool { return sampled; }
   [[nodiscard]] auto is_storage() const -> bool { return storage; }
-  [[nodiscard]] auto get_sample_count() const -> VkSampleCountFlagBits
-  {
+  [[nodiscard]] auto get_sample_count() const -> VkSampleCountFlagBits {
     return sample_count;
   }
   [[nodiscard]] auto get_image() const -> VkImage { return image; }
-  [[nodiscard]] auto get_mip_layers_image_views() const
-  {
+  [[nodiscard]] auto get_mip_layers_image_views() const {
     return std::span(mip_layer_views);
   }
-  [[nodiscard]] auto owns_self() const -> bool
-  {
-    return image_owns_itself;
-  }
+  [[nodiscard]] auto owns_self() const -> bool { return image_owns_itself; }
 
 private:
-  VkImageView image_view{ VK_NULL_HANDLE };
-  VkImageView storage_image_view{ VK_NULL_HANDLE };
-  VkSampler sampler{ VK_NULL_HANDLE };
-  VkSampleCountFlagBits sample_count{ VK_SAMPLE_COUNT_1_BIT };
-    bool image_owns_itself {true };
+  VkImageView image_view{VK_NULL_HANDLE};
+  VkImageView storage_image_view{VK_NULL_HANDLE};
+  VkSampler sampler{VK_NULL_HANDLE};
+  VkSampleCountFlagBits sample_count{VK_SAMPLE_COUNT_1_BIT};
+  bool image_owns_itself{true};
 
-  std::vector<VkImageView> mip_layer_views; // For n layers and m mip levels/layer,
+  std::vector<VkImageView>
+      mip_layer_views; // For n layers and m mip levels/layer,
   // this will contain (m * n) - 1 views. The '0'th view is the base image view.
 
-  AllocationInfo image_allocation {};
-  VkImage image{ VK_NULL_HANDLE };
+  AllocationInfo image_allocation{};
+  VkImage image{VK_NULL_HANDLE};
 
-  bool sampled{ false };
-  bool storage{ false };
+  bool sampled{false};
+  bool storage{false};
 };
 
-class VkTextureSampler
-{
+class VkTextureSampler {
 public:
-  static auto create(IContext&,
-                    const VkSamplerCreateInfo&) -> Holder<SamplerHandle>;
+  static auto create(IContext &, const VkSamplerCreateInfo &)
+      -> Holder<SamplerHandle>;
 };
 
-}
+} // namespace VkBindless
