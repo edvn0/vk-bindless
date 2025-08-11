@@ -1,9 +1,9 @@
 #pragma once
 
+#include "vk-bindless/expected.hpp"
 #include "vk-bindless/types.hpp"
 
 #include <cstddef>
-#include <expected>
 #include <string>
 #include <vulkan/vulkan.h>
 
@@ -52,22 +52,21 @@ struct IAllocator {
   [[nodiscard]] virtual auto
   allocate_buffer(const VkBufferCreateInfo &buffer_info,
                   const AllocationCreateInfo &alloc_info)
-      -> std::expected<std::pair<VkBuffer, AllocationInfo>,
-                       AllocationError> = 0;
+      -> Expected<std::pair<VkBuffer, AllocationInfo>, AllocationError> = 0;
 
   virtual auto deallocate_buffer(VkBuffer buffer) -> void = 0;
 
   [[nodiscard]] virtual auto
   allocate_image(const VkImageCreateInfo &image_info,
                  const AllocationCreateInfo &alloc_info)
-      -> std::expected<std::pair<VkImage, AllocationInfo>, AllocationError> = 0;
+      -> Expected<std::pair<VkImage, AllocationInfo>, AllocationError> = 0;
 
   virtual auto deallocate_image(VkImage image) -> void = 0;
 
   [[nodiscard]] virtual auto map_memory(VkBuffer buffer)
-      -> std::expected<void *, AllocationError> = 0;
+      -> Expected<void *, AllocationError> = 0;
   [[nodiscard]] virtual auto map_memory(VkImage image)
-      -> std::expected<void *, AllocationError> = 0;
+      -> Expected<void *, AllocationError> = 0;
 
   virtual auto unmap_memory(VkBuffer buffer) -> void = 0;
   virtual auto unmap_memory(VkImage image) -> void = 0;

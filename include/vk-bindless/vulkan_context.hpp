@@ -1,11 +1,11 @@
 #pragma once
 
+#include "vk-bindless/expected.hpp"
 #include "vk-bindless/graphics_context.hpp"
 #include "vk-bindless/object_pool.hpp"
 #include "vk-bindless/texture.hpp"
 #include "vk-bindless/types.hpp"
 
-#include <expected>
 #include <functional>
 #include <memory>
 
@@ -19,7 +19,7 @@ public:
   ~Context() override;
 
   static auto create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
-      -> std::expected<std::unique_ptr<IContext>, ContextError>;
+      -> Expected<std::unique_ptr<IContext>, ContextError>;
 
   [[nodiscard]] auto get_device() const -> const VkDevice & override;
   [[nodiscard]] auto get_physical_device() const
@@ -27,9 +27,9 @@ public:
   [[nodiscard]] auto get_instance() const -> const VkInstance & override;
 
   [[nodiscard]] auto get_queue(Queue) const
-      -> std::expected<VkQueue, ContextError> override;
+      -> Expected<VkQueue, ContextError> override;
   [[nodiscard]] auto get_queue_family_index(Queue) const
-      -> std::expected<std::uint32_t, ContextError> override;
+      -> Expected<std::uint32_t, ContextError> override;
 
   [[nodiscard]] auto get_queue_unsafe(Queue) const -> const VkQueue & override;
   [[nodiscard]] auto get_queue_family_index_unsafe(Queue) const
@@ -85,9 +85,9 @@ private:
   static auto get_dsl_binding(std::uint32_t, VkDescriptorType, uint32_t)
       -> VkDescriptorSetLayoutBinding;
   auto grow_descriptor_pool(std::uint32_t textures, std::uint32_t samplers)
-      -> std::expected<void, ContextError>;
+      -> Expected<void, ContextError>;
   auto create_placeholder_resources() -> void;
-  auto update_descriptor_sets() -> std::expected<void, ContextError>;
+  auto update_descriptor_sets() -> Expected<void, ContextError>;
 
   using base = IContext;
 };

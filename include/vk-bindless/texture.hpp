@@ -3,7 +3,6 @@
 #include "allocator_interface.hpp"
 
 #include <cstdint>
-#include <expected>
 #include <span>
 #include <string>
 #include <vulkan/vulkan.h>

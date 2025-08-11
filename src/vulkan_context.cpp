@@ -42,7 +42,7 @@ Context::~Context() {
 }
 
 auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
-    -> std::expected<std::unique_ptr<IContext>, ContextError> {
+    -> Expected<std::unique_ptr<IContext>, ContextError> {
   vkb::InstanceBuilder builder;
   auto inst_ret = builder.set_app_name("Bindless Vulkan")
                       .request_validation_layers()
@@ -50,7 +50,7 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
                       .require_api_version(1, 4, 0)
                       .build();
   if (!inst_ret) {
-    return std::unexpected(ContextError{"Failed to create Vulkan instance"});
+    return unexpected(ContextError{"Failed to create Vulkan instance"});
   }
 
   vkb::Instance vkb_instance = inst_ret.value();
@@ -83,8 +83,7 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
   if (!phys_ret) {
     std::cout << "Failed to select Vulkan physical device: "
               << phys_ret.error().message() << std::endl;
-    return std::unexpected(
-        ContextError{"Failed to select Vulkan physical device"});
+    return unexpected(ContextError{"Failed to select Vulkan physical device"});
   }
 
   const vkb::PhysicalDevice &vkb_physical = phys_ret.value();
@@ -124,7 +123,7 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
 
   auto dev_ret = dev_builder.build();
   if (!dev_ret) {
-    return std::unexpected(ContextError{"Failed to create logical device"});
+    return unexpected(ContextError{"Failed to create logical device"});
   }
 
   const vkb::Device &vkb_device = dev_ret.value();
@@ -138,7 +137,7 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
   {
     auto q = vkb_device.get_queue(vkb::QueueType::graphics);
     if (!q)
-      return std::unexpected(ContextError{"Missing graphics queue"});
+      return unexpected(ContextError{"Missing graphics queue"});
     context->graphics_queue = q.value();
     context->graphics_queue_family =
         vkb_device.get_queue_index(vkb::QueueType::graphics).value();
@@ -179,7 +178,7 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
 }
 
 auto Context::get_queue(const Queue queue) const
-    -> std::expected<VkQueue, ContextError> {
+    -> Expected<VkQueue, ContextError> {
   switch (queue) {
     using enum VkBindless::Queue;
   case Graphics:
@@ -189,11 +188,11 @@ auto Context::get_queue(const Queue queue) const
   case Transfer:
     return transfer_queue;
   }
-  return std::unexpected(ContextError{"Invalid queue requested"});
+  return unexpected(ContextError{"Invalid queue requested"});
 }
 
 auto Context::get_queue_family_index(const Queue queue) const
-    -> std::expected<std::uint32_t, ContextError> {
+    -> Expected<std::uint32_t, ContextError> {
   switch (queue) {
     using enum VkBindless::Queue;
   case Graphics:
@@ -203,7 +202,7 @@ auto Context::get_queue_family_index(const Queue queue) const
   case Transfer:
     return transfer_queue_family;
   }
-  return std::unexpected(ContextError{"Invalid queue family requested"});
+  return unexpected(ContextError{"Invalid queue family requested"});
 }
 
 auto Context::get_device() const -> const VkDevice & {
@@ -382,7 +381,7 @@ auto Context::get_dsl_binding(const std::uint32_t index,
 
 auto Context::grow_descriptor_pool(std::uint32_t new_max_textures,
                                    std::uint32_t new_max_samplers)
-    -> std::expected<void, ContextError> {
+    -> Expected<void, ContextError> {
   static auto vkGetPhysicalDeviceProperties2 =
       reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(
           vkGetInstanceProcAddr(vkb_instance.instance,
@@ -392,7 +391,7 @@ auto Context::grow_descriptor_pool(std::uint32_t new_max_textures,
   current_max_samplers = new_max_samplers;
 
   if (vkGetPhysicalDeviceProperties2 == nullptr) {
-    return std::unexpected(
+    return unexpected(
         ContextError{"Failed to get vkGetPhysicalDeviceProperties2"});
   }
 
@@ -407,7 +406,7 @@ auto Context::grow_descriptor_pool(std::uint32_t new_max_textures,
 
 #define VERIFY(condition, message)                                             \
   if (!(condition)) {                                                          \
-    return std::unexpected(ContextError{message});                             \
+    return unexpected(ContextError{message});                                  \
   }
 
   VERIFY(current_max_samplers <=
@@ -418,13 +417,13 @@ auto Context::grow_descriptor_pool(std::uint32_t new_max_textures,
          "Maximum number of sampled images exceeds device limit");
 
   if (const auto could = update_descriptor_sets(); !could.has_value()) {
-    return std::unexpected(could.error());
+    return unexpected(could.error());
   }
 
   return {};
 }
 
-auto Context::update_descriptor_sets() -> std::expected<void, ContextError> {
+auto Context::update_descriptor_sets() -> Expected<void, ContextError> {
   if (descriptor_pool != VK_NULL_HANDLE) {
     pre_frame_task(
         [pool = descriptor_pool](auto dev, auto *allocation_callbacks) {
@@ -475,8 +474,7 @@ auto Context::update_descriptor_sets() -> std::expected<void, ContextError> {
 
   if (vkCreateDescriptorSetLayout(vkb_device.device, &dsl_create_info, nullptr,
                                   &descriptor_set_layout) != VK_SUCCESS) {
-    return std::unexpected(
-        ContextError{"Failed to create descriptor set layout"});
+    return unexpected(ContextError{"Failed to create descriptor set layout"});
   };
 
   const std::array pool_sizes = {
@@ -508,7 +506,7 @@ auto Context::update_descriptor_sets() -> std::expected<void, ContextError> {
   };
   if (vkCreateDescriptorPool(vkb_device.device, &pool_create_info, nullptr,
                              &descriptor_pool) != VK_SUCCESS) {
-    return std::unexpected(ContextError{"Failed to create descriptor pool"});
+    return unexpected(ContextError{"Failed to create descriptor pool"});
   }
 
   // Allocate the descriptor set
@@ -519,7 +517,7 @@ auto Context::update_descriptor_sets() -> std::expected<void, ContextError> {
       .pSetLayouts = &descriptor_set_layout};
   if (vkAllocateDescriptorSets(vkb_device.device, &alloc_info,
                                &descriptor_set) != VK_SUCCESS) {
-    return std::unexpected(ContextError{"Failed to allocate descriptor set"});
+    return unexpected(ContextError{"Failed to allocate descriptor set"});
   }
 
   return {};

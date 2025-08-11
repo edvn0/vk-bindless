@@ -1,11 +1,11 @@
 #pragma once
 
+#include "vk-bindless/expected.hpp"
 #include "vk-bindless/forward.hpp"
 #include "vk-bindless/handle.hpp"
 #include "vk-bindless/texture.hpp"
 
 #include <deque>
-#include <expected>
 #include <functional>
 #include <string>
 #include <vulkan/vulkan.h>
@@ -34,9 +34,9 @@ struct IContext {
       -> const VkPhysicalDevice & = 0;
   [[nodiscard]] virtual auto get_instance() const -> const VkInstance & = 0;
   [[nodiscard]] virtual auto get_queue(Queue queue) const
-      -> std::expected<VkQueue, ContextError> = 0;
+      -> Expected<VkQueue, ContextError> = 0;
   [[nodiscard]] virtual auto get_queue_family_index(Queue queue) const
-      -> std::expected<std::uint32_t, ContextError> = 0;
+      -> Expected<std::uint32_t, ContextError> = 0;
   [[nodiscard]] virtual auto get_queue_unsafe(Queue queue) const
       -> const VkQueue & = 0;
   [[nodiscard]] virtual auto get_queue_family_index_unsafe(Queue queue) const

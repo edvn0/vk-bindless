@@ -1,9 +1,23 @@
 cmake_minimum_required(VERSION 3.21)
+
+include(CheckCXXSourceCompiles)
+
 project(VkBindless LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(DISABLE_EXCEPTIONS ON)
+
+# Testing option
+option(ENABLE_TESTING "Enable testing" ON)
+
+check_cxx_source_compiles("
+#include <expected>
+int main() {
+    std::expected<int, int> v{42};
+    return XXXv.value();
+}
+" HAS_STD_EXPECTED)
 
 add_subdirectory(third-party)
 
@@ -13,6 +27,12 @@ add_library(${PROJECT_NAME} STATIC src/graphics_context.cpp src/vulkan_context.c
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan vk-bootstrap GPUOpen::VulkanMemoryAllocator)
 target_include_directories(${PROJECT_NAME} PUBLIC ${Vulkan_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/third-party/vk-bootstrap/src)
+
+if (HAS_STD_EXPECTED)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC HAS_STD_EXPECTED)
+else()
+    target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_SOURCE_DIR}/third-party/expected/include)
+endif()
 
 if(ENABLE_TESTING)
     enable_testing()

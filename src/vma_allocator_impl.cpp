@@ -1,4 +1,5 @@
 #include "vk-bindless/allocator_interface.hpp"
+#include "vk-bindless/expected.hpp"
 
 #define VMA_IMPLEMENTATION
 #define VMA_DEBUG_LOG_FORMAT(format, ...)                                      \
@@ -36,8 +37,8 @@ public:
 
   auto allocate_buffer(const VkBufferCreateInfo &buffer_info,
                        const AllocationCreateInfo &alloc_info)
-      -> std::expected<std::pair<VkBuffer, AllocationInfo>,
-                       AllocationError> override {
+      -> Expected<std::pair<VkBuffer, AllocationInfo>,
+                  AllocationError> override {
     VmaAllocationCreateInfo vma_alloc_info{};
     vma_alloc_info.usage = to_vma_usage(alloc_info.usage);
     if (alloc_info.map_memory) {
@@ -55,7 +56,7 @@ public:
                         &allocation, &allocation_info);
 
     if (result != VK_SUCCESS) {
-      return std::unexpected(AllocationError{"Failed to allocate buffer"});
+      return unexpected(AllocationError{"Failed to allocate buffer"});
     }
 
     // Store the allocation for later cleanup
@@ -80,8 +81,8 @@ public:
 
   auto allocate_image(const VkImageCreateInfo &image_info,
                       const AllocationCreateInfo &alloc_info)
-      -> std::expected<std::pair<VkImage, AllocationInfo>,
-                       AllocationError> override {
+      -> Expected<std::pair<VkImage, AllocationInfo>,
+                  AllocationError> override {
     VmaAllocationCreateInfo vma_alloc_info{};
     vma_alloc_info.usage = to_vma_usage(alloc_info.usage);
     if (alloc_info.map_memory) {
@@ -98,7 +99,7 @@ public:
                                        &image, &allocation, &allocation_info);
 
     if (result != VK_SUCCESS) {
-      return std::unexpected(AllocationError{"Failed to allocate image"});
+      return unexpected(AllocationError{"Failed to allocate image"});
     }
 
     image_allocations[image] = allocation;
@@ -122,7 +123,7 @@ public:
   }
 
   auto map_memory(const VkBuffer buffer)
-      -> std::expected<void *, AllocationError> override {
+      -> Expected<void *, AllocationError> override {
     if (const auto it = buffer_allocations.find(buffer);
         it != buffer_allocations.end()) {
       void *mapped_data;
@@ -131,11 +132,11 @@ public:
         return mapped_data;
       }
     }
-    return std::unexpected(AllocationError{"Failed to map buffer memory"});
+    return unexpected(AllocationError{"Failed to map buffer memory"});
   }
 
   auto map_memory(const VkImage image)
-      -> std::expected<void *, AllocationError> override {
+      -> Expected<void *, AllocationError> override {
     if (const auto it = image_allocations.find(image);
         it != image_allocations.end()) {
       void *mapped_data;
@@ -144,7 +145,7 @@ public:
         return mapped_data;
       }
     }
-    return std::unexpected(AllocationError{"Failed to map image memory"});
+    return unexpected(AllocationError{"Failed to map image memory"});
   }
 
   auto unmap_memory(const VkBuffer buffer) -> void override {

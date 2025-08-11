@@ -1,9 +1,10 @@
 #include "vk-bindless/vulkan_context.hpp"
 
+#define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+
 #include <bit>
 #include <cstdint>
-#include <vulkan/vulkan_core.h>
 
 static auto destroy_glfw(GLFWwindow *window) -> void {
   if (window) {
@@ -13,9 +14,11 @@ static auto destroy_glfw(GLFWwindow *window) -> void {
 }
 
 struct WindowState {
-  int windowed_x, windowed_y;
-  int windowed_width, windowed_height;
-  bool fullscreen = false;
+  std::int32_t windowed_x{};
+  std::int32_t windowed_y{};
+  std::int32_t windowed_width{};
+  std::int32_t windowed_height{};
+  bool fullscreen{false};
 };
 
 template <typename T> static auto launder_cast(const void *ptr) -> T {

@@ -1,11 +1,13 @@
 #pragma once
 
+#include "vk-bindless/expected.hpp"
 #include "vk-bindless/handle.hpp"
+#include "vk-bindless/holder.hpp"
 
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
-#include <expected>
+
 #include <ranges>
 #include <string_view>
 #include <type_traits>
@@ -59,22 +61,22 @@ public:
   }
 
   [[nodiscard]]
-  auto destroy(Handle<ObjectType> handle) -> std::expected<void, PoolError> {
+  auto destroy(Handle<ObjectType> handle) -> Expected<void, PoolError> {
     if (!handle.valid()) {
-      return std::unexpected(PoolError::InvalidHandle);
+      return unexpected(PoolError::InvalidHandle);
     }
 
     if (num_objects == 0) {
-      return std::unexpected(PoolError::InvalidHandle);
+      return unexpected(PoolError::InvalidHandle);
     }
 
     const auto index = handle.index();
     if (index >= objects.size()) {
-      return std::unexpected(PoolError::IndexOutOfBounds);
+      return unexpected(PoolError::IndexOutOfBounds);
     }
 
     if (handle.generation() != metadata[index].generation) {
-      return std::unexpected(PoolError::StaleHandle);
+      return unexpected(PoolError::StaleHandle);
     }
 
     objects[index] = ImplObjectType{};
@@ -87,19 +89,18 @@ public:
   }
 
   [[nodiscard]]
-  auto get(Handle<ObjectType> handle)
-      -> std::expected<ImplObjectType *, PoolError> {
+  auto get(Handle<ObjectType> handle) -> Expected<ImplObjectType *, PoolError> {
     if (!handle.valid()) {
-      return std::unexpected(PoolError::InvalidHandle);
+      return unexpected(PoolError::InvalidHandle);
     }
 
     const auto index = handle.index();
     if (index >= objects.size()) {
-      return std::unexpected(PoolError::IndexOutOfBounds);
+      return unexpected(PoolError::IndexOutOfBounds);
     }
 
     if (handle.generation() != metadata[index].generation) {
-      return std::unexpected(PoolError::StaleHandle);
+      return unexpected(PoolError::StaleHandle);
     }
 
     return &objects[index];
@@ -110,18 +111,18 @@ public:
   }
 
   [[nodiscard]] auto get(Handle<ObjectType> handle) const
-      -> std::expected<const ImplObjectType *, PoolError> {
+      -> Expected<const ImplObjectType *, PoolError> {
     if (!handle.valid()) {
-      return std::unexpected(PoolError::InvalidHandle);
+      return unexpected(PoolError::InvalidHandle);
     }
 
     const auto index = handle.index();
     if (index >= objects.size()) {
-      return std::unexpected(PoolError::IndexOutOfBounds);
+      return unexpected(PoolError::IndexOutOfBounds);
     }
 
     if (handle.generation() != metadata[index].generation) {
-      return std::unexpected(PoolError::StaleHandle);
+      return unexpected(PoolError::StaleHandle);
     }
 
     return &objects[index];
