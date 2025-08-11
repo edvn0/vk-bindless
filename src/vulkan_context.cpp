@@ -57,6 +57,10 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
 
   VkSurfaceKHR surf = surface_fn(vkb_instance.instance);
 
+  if (VK_NULL_HANDLE == surf) {
+    std::cerr << "Headless rendering is enabled." << std::endl;
+  }
+
   vkb::PhysicalDeviceSelector selector{vkb_instance, surf};
   auto phys_ret =
       selector

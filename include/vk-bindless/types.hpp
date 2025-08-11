@@ -17,7 +17,7 @@ constexpr auto default_deleter = +[](const T *) -> void {};
 namespace detail {
 std::string_view vk_result_to_string(VkResult result);
 
-auto log_verification(const std::string &message) -> void;
+auto log_verification(std::string &&message) -> void;
 
 template <typename... Args>
 auto log_verification(std::format_string<Args...> fmt, Args &&...args) -> void {

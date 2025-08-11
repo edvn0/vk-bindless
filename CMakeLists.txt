@@ -25,4 +25,9 @@ endif()
 
 add_library(VkBindless::VkBindless ALIAS VkBindless)
 
+# if clang/gcc, -Wnonullability-completeness
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wno-nullability-completeness)
+endif()
+
 add_subdirectory(client)

@@ -3,6 +3,7 @@
 #include <GLFW/glfw3.h>
 #include <bit>
 #include <cstdint>
+#include <vulkan/vulkan_core.h>
 
 static auto destroy_glfw(GLFWwindow *window) -> void {
   if (window) {
@@ -21,32 +22,49 @@ template <typename T> static auto launder_cast(const void *ptr) -> T {
   return std::bit_cast<T>(ptr);
 }
 
-void key_callback(GLFWwindow *win, int key, int /*scancode*/, int action,
-                  int /*mods*/, void *user_data) {
+static auto is_wayland() -> bool {
+  int platform = glfwGetPlatform();
+  return platform == GLFW_PLATFORM_WAYLAND;
+}
+
+void key_callback(GLFWwindow *win, int key, int, int action, int,
+                  void *user_data) {
   if (action != GLFW_PRESS)
     return;
-
   auto state = launder_cast<WindowState *>(user_data);
 
   if (key == GLFW_KEY_ESCAPE) {
     glfwSetWindowShouldClose(win, GLFW_TRUE);
-  } else if (key == GLFW_KEY_F11) {
+    return;
+  }
+
+  if (key == GLFW_KEY_F11) {
+    GLFWmonitor *monitor = glfwGetPrimaryMonitor();
+    const GLFWvidmode *mode = glfwGetVideoMode(monitor);
+
     if (!state->fullscreen) {
-      GLFWmonitor *monitor = glfwGetPrimaryMonitor();
-      const GLFWvidmode *mode = glfwGetVideoMode(monitor);
-
-      glfwGetWindowPos(win, &state->windowed_x, &state->windowed_y);
+      if (!is_wayland()) {
+        glfwGetWindowPos(win, &state->windowed_x, &state->windowed_y);
+      }
       glfwGetWindowSize(win, &state->windowed_width, &state->windowed_height);
-
       glfwSetWindowMonitor(win, monitor, 0, 0, mode->width, mode->height,
                            mode->refreshRate);
       state->fullscreen = true;
     } else {
-      glfwSetWindowMonitor(win, nullptr, state->windowed_x, state->windowed_y,
-                           state->windowed_width, state->windowed_height, 0);
+      if (is_wayland()) {
+        glfwSetWindowMonitor(win, nullptr, 0, 0, state->windowed_width,
+                             state->windowed_height, 0);
+      } else {
+        glfwSetWindowMonitor(win, nullptr, state->windowed_x, state->windowed_y,
+                             state->windowed_width, state->windowed_height, 0);
+      }
       state->fullscreen = false;
     }
   }
+}
+
+static constexpr auto as_null(auto k = VK_NULL_HANDLE) -> decltype(k) {
+  return static_cast<decltype(k)>(VK_NULL_HANDLE);
 }
 
 auto main() -> std::int32_t {
@@ -54,6 +72,9 @@ auto main() -> std::int32_t {
   using GLFWPointer = std::unique_ptr<GLFWwindow, decltype(&destroy_glfw)>;
 
   glfwInit();
+  glfwSetErrorCallback([](int c, const char *d) {
+    fprintf(stderr, "GLFW error %d: %s\n", c, d);
+  });
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
   std::int32_t initial_width = 800;
@@ -64,23 +85,22 @@ auto main() -> std::int32_t {
                      destroy_glfw);
 
   WindowState state{};
-  glfwGetWindowPos(window.get(), &state.windowed_x, &state.windowed_y);
+  if (!is_wayland())
+    glfwGetWindowPos(window.get(), &state.windowed_x, &state.windowed_y);
   glfwGetWindowSize(window.get(), &state.windowed_width,
                     &state.windowed_height);
 
-  auto context =
-      VkBindless::Context::create([win = window.get()](VkInstance instance) {
-        VkSurfaceKHR surface;
-        if (glfwCreateWindowSurface(instance, win, nullptr, &surface) !=
-            VK_SUCCESS) {
-          throw std::runtime_error("Failed to create Vulkan surface");
-        }
-        return surface;
-      });
+  auto context = Context::create([win = window.get()](VkInstance instance) {
+    VkSurfaceKHR surface;
+    if (glfwCreateWindowSurface(instance, win, nullptr, &surface) !=
+        VK_SUCCESS) {
+      return as_null(surface);
+    }
+    return surface;
+  });
 
   auto vulkan_context = std::move(context.value());
 
-  // Set key callback with user pointer for WindowState
   glfwSetWindowUserPointer(window.get(), &state);
   glfwSetKeyCallback(window.get(), [](GLFWwindow *win, int key, int scancode,
                                       int action, int mods) {
@@ -108,8 +128,6 @@ auto main() -> std::int32_t {
       frame_count = 0;
       fps_time_accumulator = 0.0;
     }
-
-    // Your rendering code here ...
   }
 
   return 0;

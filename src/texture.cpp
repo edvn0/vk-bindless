@@ -5,6 +5,7 @@
 #include "vk-bindless/object_pool.hpp"
 #include "vk-bindless/types.hpp"
 
+#include <cmath>
 #include <vk_mem_alloc.h>
 
 namespace VkBindless {

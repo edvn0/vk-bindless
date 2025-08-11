@@ -2,6 +2,7 @@
 
 #include <bit>
 #include <compare>
+#include <cstdint>
 
 namespace VkBindless {
 
