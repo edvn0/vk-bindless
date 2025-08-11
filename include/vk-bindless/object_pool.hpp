@@ -63,20 +63,20 @@ public:
   [[nodiscard]]
   auto destroy(Handle<ObjectType> handle) -> Expected<void, PoolError> {
     if (!handle.valid()) {
-      return unexpected(PoolError::InvalidHandle);
+      return unexpected<PoolError>(PoolError::InvalidHandle);
     }
 
     if (num_objects == 0) {
-      return unexpected(PoolError::InvalidHandle);
+      return unexpected<PoolError>(PoolError::InvalidHandle);
     }
 
     const auto index = handle.index();
     if (index >= objects.size()) {
-      return unexpected(PoolError::IndexOutOfBounds);
+      return unexpected<PoolError>(PoolError::IndexOutOfBounds);
     }
 
     if (handle.generation() != metadata[index].generation) {
-      return unexpected(PoolError::StaleHandle);
+      return unexpected<PoolError>(PoolError::StaleHandle);
     }
 
     objects[index] = ImplObjectType{};
@@ -91,16 +91,16 @@ public:
   [[nodiscard]]
   auto get(Handle<ObjectType> handle) -> Expected<ImplObjectType *, PoolError> {
     if (!handle.valid()) {
-      return unexpected(PoolError::InvalidHandle);
+      return unexpected<PoolError>(PoolError::InvalidHandle);
     }
 
     const auto index = handle.index();
     if (index >= objects.size()) {
-      return unexpected(PoolError::IndexOutOfBounds);
+      return unexpected<PoolError>(PoolError::IndexOutOfBounds);
     }
 
     if (handle.generation() != metadata[index].generation) {
-      return unexpected(PoolError::StaleHandle);
+      return unexpected<PoolError>(PoolError::StaleHandle);
     }
 
     return &objects[index];
@@ -113,16 +113,16 @@ public:
   [[nodiscard]] auto get(Handle<ObjectType> handle) const
       -> Expected<const ImplObjectType *, PoolError> {
     if (!handle.valid()) {
-      return unexpected(PoolError::InvalidHandle);
+      return unexpected<PoolError>(PoolError::InvalidHandle);
     }
 
     const auto index = handle.index();
     if (index >= objects.size()) {
-      return unexpected(PoolError::IndexOutOfBounds);
+      return unexpected<PoolError>(PoolError::IndexOutOfBounds);
     }
 
     if (handle.generation() != metadata[index].generation) {
-      return unexpected(PoolError::StaleHandle);
+      return unexpected<PoolError>(PoolError::StaleHandle);
     }
 
     return &objects[index];

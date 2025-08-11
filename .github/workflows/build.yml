@@ -30,7 +30,7 @@ jobs:
           sudo apt-get install -y \
             cmake ninja-build \
             gcc g++ clang \
-            libwayland-dev wayland-protocols libxkbcommon-dev \
+            libwayland-dev wayland-protocols libxkbcommon-dev xorg-dev \
             extra-cmake-modules
 
       - name: Set up compiler

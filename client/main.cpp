@@ -74,7 +74,13 @@ auto main() -> std::int32_t {
   using namespace VkBindless;
   using GLFWPointer = std::unique_ptr<GLFWwindow, decltype(&destroy_glfw)>;
 
-  glfwInit();
+  glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+  if (!glfwInit()) {
+    const char *error{};
+    glfwGetError(&error);
+    fprintf(stderr, "GLFW error: %s\n", error);
+    return 1;
+  }
   glfwSetErrorCallback([](int c, const char *d) {
     fprintf(stderr, "GLFW error %d: %s\n", c, d);
   });

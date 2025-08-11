@@ -56,7 +56,8 @@ public:
                         &allocation, &allocation_info);
 
     if (result != VK_SUCCESS) {
-      return unexpected(AllocationError{"Failed to allocate buffer"});
+      return unexpected<AllocationError>(
+          AllocationError{"Failed to allocate buffer"});
     }
 
     // Store the allocation for later cleanup
@@ -99,7 +100,8 @@ public:
                                        &image, &allocation, &allocation_info);
 
     if (result != VK_SUCCESS) {
-      return unexpected(AllocationError{"Failed to allocate image"});
+      return unexpected<AllocationError>(
+          AllocationError{"Failed to allocate image"});
     }
 
     image_allocations[image] = allocation;
@@ -132,7 +134,8 @@ public:
         return mapped_data;
       }
     }
-    return unexpected(AllocationError{"Failed to map buffer memory"});
+    return unexpected<AllocationError>(
+        AllocationError{"Failed to map buffer memory"});
   }
 
   auto map_memory(const VkImage image)
@@ -145,7 +148,8 @@ public:
         return mapped_data;
       }
     }
-    return unexpected(AllocationError{"Failed to map image memory"});
+    return unexpected<AllocationError>(
+        AllocationError{"Failed to map image memory"});
   }
 
   auto unmap_memory(const VkBuffer buffer) -> void override {
