@@ -99,6 +99,8 @@ public:
     const auto result = vmaCreateImage(allocator, &image_info, &vma_alloc_info,
                                        &image, &allocation, &allocation_info);
 
+                        vmaSetAllocationName(allocator, allocation, alloc_info.debug_name.c_str());
+
     if (result != VK_SUCCESS) {
       return unexpected<AllocationError>(
           AllocationError{"Failed to allocate image"});

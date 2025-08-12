@@ -6,10 +6,11 @@ project(VkBindless LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(DISABLE_EXCEPTIONS ON)
 
 # Testing option
 option(ENABLE_TESTING "Enable testing" ON)
+
+find_package(Vulkan REQUIRED)
 
 check_cxx_source_compiles("
 #include <expected>
@@ -22,7 +23,7 @@ int main() {
 add_subdirectory(third-party)
 
 add_library(CustomVMA STATIC src/vma_allocator_impl.cpp)
-target_include_directories(CustomVMA PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(CustomVMA PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${CMAKE_SOURCE_DIR}/third-party/VulkanMemoryAllocator/include ${Vulkan_INCLUDE_DIRS})
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     # -Wmissing-field-initializers,-Wunused-parameter
     target_compile_options(CustomVMA PRIVATE -Wmissing-field-initializers -Wunused-parameter)
@@ -34,10 +35,9 @@ else()
 endif()
 
 
-find_package(Vulkan REQUIRED)
 
 add_library(${PROJECT_NAME} STATIC src/graphics_context.cpp src/vulkan_context.cpp src/texture.cpp src/types.cpp src/commands.cpp src/command_buffer.cpp src/swapchain.cpp)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${CMAKE_SOURCE_DIR}/third-party/VulkanMemoryAllocator/include)
 target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan vk-bootstrap CustomVMA)
 target_include_directories(${PROJECT_NAME} PUBLIC ${Vulkan_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/third-party/vk-bootstrap/src)
 
@@ -63,11 +63,6 @@ if (MSVC)
     if (ENABLE_TESTING)
         target_compile_options(test_vk_bindless PRIVATE /W4 /WX)
     endif()    
-    get_target_property(VMA_REAL_TARGET GPUOpen::VulkanMemoryAllocator ALIASED_TARGET)
-
-    if (VMA_REAL_TARGET)
-        target_compile_options(${VMA_REAL_TARGET} INTERFACE /wd4100 /wd4324)
-    endif()
 elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     set(COMPILE_FLAGS "-Wall;-Wextra;-Wpedantic;-Werror;-Wno-nullability-completeness;-Wno-nullability-extension")
     target_compile_options(${PROJECT_NAME} PRIVATE ${COMPILE_FLAGS})

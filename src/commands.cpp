@@ -147,7 +147,7 @@ auto ImmediateCommands::submit(const CommandBufferWrapper &wrapper)
     wait_semaphores[wait_semaphore_count++] = last_submit_semaphore;
   }
 
-  std::array<VkSemaphoreSubmitInfo, 1> signal_semaphores{
+  std::array<VkSemaphoreSubmitInfo, 2> signal_semaphores{
       VkSemaphoreSubmitInfo{
           .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
           .pNext = nullptr,
@@ -156,10 +156,11 @@ auto ImmediateCommands::submit(const CommandBufferWrapper &wrapper)
           .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
           .deviceIndex = 0,
       },
+      {},
   };
   auto signal_semaphore_count = 1U;
-  if (last_submit_semaphore.semaphore != VK_NULL_HANDLE) {
-    signal_semaphores[signal_semaphore_count++] = last_submit_semaphore;
+  if (signal_semaphore_info.semaphore != VK_NULL_HANDLE) {
+    signal_semaphores[signal_semaphore_count++] = signal_semaphore_info;
   }
 
   const VkCommandBufferSubmitInfo bufferSI = {

@@ -4,6 +4,7 @@
 #include "vk-bindless/graphics_context.hpp"
 #include "vk-bindless/object_pool.hpp"
 #include "vk-bindless/types.hpp"
+#include "vk-bindless/vulkan_context.hpp"
 
 #include <cmath>
 #include <vk_mem_alloc.h>
@@ -51,8 +52,9 @@ VkTexture::VkTexture(IContext &ctx, const VkTextureDescription &description)
          "Image must have at least one mip level and one layer");
 
   if (description.debug_name.empty()) {
-    // Set debug name
-  }
+    set_name_for_object(
+        ctx.get_device(), VK_OBJECT_TYPE_IMAGE, image, std::format("{}-[{}x{}]", description.debug_name, description.extent.width, description.extent.height));
+      }
 
   AllocationCreateInfo alloc_info{
       .usage = MemoryUsage::AutoPreferDevice,

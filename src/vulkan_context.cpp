@@ -53,6 +53,8 @@ constexpr VkShaderStageFlags all_stages_flags =
 Context::~Context() {
   vkDeviceWaitIdle(vkb_device.device);
 
+  swapchain.reset();
+
   destroy(dummy_texture);
   destroy(dummy_sampler);
 
@@ -150,7 +152,6 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
   auto phys_ret =
       selector
           .set_minimum_version(1, 3) // You can adjust from 1.0 to 1.4 here
-          .add_required_extension("VK_EXT_swapchain_maintenance1")
           /*  .add_required_extension("VK_KHR_shader_draw_parameters")
             .add_required_extension("VK_EXT_descriptor_indexing")
             .add_required_extension("VK_KHR_dynamic_rendering")
@@ -277,7 +278,7 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
         vkb_physical.physical_device, surf, &device_surface_capabilities);
   }
   context->device_surface_capabilities = device_surface_capabilities;
-  context->has_swapchain_maintenance_1 = true;
+  context->has_swapchain_maintenance_1 = false;
   context->immediate_commands = std::make_unique<ImmediateCommands>(
       vkb_device.device, context->graphics_queue_family, "Immediate Commands");
 
@@ -756,11 +757,10 @@ auto Context::submit(ICommandBuffer &commandBuffer, TextureHandle present)
     assert(tex->is_swapchain_image());
 
     VkPipelineStageFlags2 src_stage =
-        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-    VkAccessFlags2 src_access = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT |
-                                VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-    VkPipelineStageFlags2 dst_stage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
-    VkAccessFlags2 dst_access = VK_ACCESS_2_MEMORY_READ_BIT;
+        VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+    VkAccessFlags2 src_access = VK_ACCESS_2_NONE;
+    VkPipelineStageFlags2 dst_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    VkAccessFlags2 dst_access = VK_ACCESS_2_NONE | VK_ACCESS_2_SHADER_WRITE_BIT;
 
     Transition::image(vk_buffer.get_command_buffer(), tex->get_image(),
                       VK_IMAGE_LAYOUT_UNDEFINED,
@@ -771,7 +771,7 @@ auto Context::submit(ICommandBuffer &commandBuffer, TextureHandle present)
                       src_stage, src_access, dst_stage, dst_access);
   }
 
-  const auto has_swapchain = !is_headless;
+  const auto has_swapchain = swapchain != nullptr;
   const bool should_present = has_swapchain && present;
 
   if (should_present) {

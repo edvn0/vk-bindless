@@ -92,6 +92,11 @@ auto Swapchain::current_texture() -> TextureHandle {
   auto &vulkan_context = static_cast<Context &>(context_ref);
 
   if (need_next_image) {
+    if (present_fences[swapchain_current_image_index()]) {
+      // VK_EXT_swapchain_maintenance1: before acquiring again, wait for the presentation operation to finish
+      VK_VERIFY(vkWaitForFences(context_ref.vkb_device, 1, &present_fences[swapchain_current_image_index()], VK_TRUE, UINT64_MAX));
+      VK_VERIFY(vkResetFences(context_ref.vkb_device, 1, &present_fences[swapchain_current_image_index()]));
+    }
     const VkSemaphoreWaitInfo wait_info = {
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
         .pNext = nullptr,
