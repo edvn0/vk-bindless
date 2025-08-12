@@ -57,6 +57,8 @@ TEST_CASE("Pool double destroy is detected") {
   auto handle = pool.create(DummyImpl{7});
   auto second_handle = pool.create(DummyImpl{7});
 
+  (void)second_handle;
+
   CHECK(pool.destroy(handle).has_value());
   auto result = pool.destroy(handle);
   REQUIRE(!result.has_value());

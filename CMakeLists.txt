@@ -21,11 +21,24 @@ int main() {
 
 add_subdirectory(third-party)
 
+add_library(CustomVMA STATIC src/vma_allocator_impl.cpp)
+target_include_directories(CustomVMA PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    # -Wmissing-field-initializers,-Wunused-parameter
+    target_compile_options(CustomVMA PRIVATE -Wmissing-field-initializers -Wunused-parameter)
+endif()
+if (HAS_STD_EXPECTED)
+    target_compile_definitions(CustomVMA PUBLIC HAS_STD_EXPECTED)
+else()
+    target_include_directories(CustomVMA PUBLIC ${CMAKE_SOURCE_DIR}/third-party/expected/include)
+endif()
+
+
 find_package(Vulkan REQUIRED)
 
-add_library(${PROJECT_NAME} STATIC src/graphics_context.cpp src/vulkan_context.cpp src/texture.cpp src/types.cpp src/vma_allocator_impl.cpp src/commands.cpp src/command_buffer.cpp src/swapchain.cpp)
+add_library(${PROJECT_NAME} STATIC src/graphics_context.cpp src/vulkan_context.cpp src/texture.cpp src/types.cpp src/commands.cpp src/command_buffer.cpp src/swapchain.cpp)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan vk-bootstrap GPUOpen::VulkanMemoryAllocator)
+target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan vk-bootstrap CustomVMA)
 target_include_directories(${PROJECT_NAME} PUBLIC ${Vulkan_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/third-party/vk-bootstrap/src)
 
 if (HAS_STD_EXPECTED)
@@ -45,11 +58,6 @@ endif()
 
 add_library(VkBindless::VkBindless ALIAS VkBindless)
 
-# if clang/gcc, -Wnonullability-completeness
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-    target_compile_options(${PROJECT_NAME} PRIVATE -Wno-nullability-completeness)
-endif()
-
 if (MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /W4 /WX)
     if (ENABLE_TESTING)
@@ -61,9 +69,10 @@ if (MSVC)
         target_compile_options(${VMA_REAL_TARGET} INTERFACE /wd4100 /wd4324)
     endif()
 elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    set(COMPILE_FLAGS "-Wall;-Wextra;-Wpedantic;-Werror;-Wno-nullability-completeness;-Wno-nullability-extension")
+    target_compile_options(${PROJECT_NAME} PRIVATE ${COMPILE_FLAGS})
     if (ENABLE_TESTING)
-        target_compile_options(test_vk_bindless PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        target_compile_options(test_vk_bindless PRIVATE ${COMPILE_FLAGS})
     endif()
 endif()
 

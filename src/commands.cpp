@@ -41,11 +41,9 @@ static auto create_fence(VkDevice device, const std::string_view name) {
   return fence;
 }
 
-ImmediateCommands::ImmediateCommands(VkDevice device,
-                                     std::uint32_t queue_family_index,
+ImmediateCommands::ImmediateCommands(VkDevice device, std::uint32_t index,
                                      std::string_view debug_name)
-    : device(device), queue_family_index(queue_family_index),
-      debug_name(debug_name) {
+    : device(device), queue_family_index(index), debug_name(debug_name) {
   vkGetDeviceQueue(device, queue_family_index, 0, &queue);
   const VkCommandPoolCreateInfo pool_info{
       .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -154,7 +152,9 @@ auto ImmediateCommands::submit(const CommandBufferWrapper &wrapper)
           .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
           .pNext = nullptr,
           .semaphore = wrapper.semaphore,
+          .value = 0,
           .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+          .deviceIndex = 0,
       },
   };
   auto signal_semaphore_count = 1U;

@@ -65,15 +65,27 @@ private:
 
   VkSemaphoreSubmitInfo last_submit_semaphore = {
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+      .pNext = nullptr,
+      .semaphore = VK_NULL_HANDLE,
+      .value = 0,
       .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+      .deviceIndex = 0,
   };
   VkSemaphoreSubmitInfo wait_semaphore_info = {
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+      .pNext = nullptr,
+      .semaphore = VK_NULL_HANDLE,
+      .value = 0,
       .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+      .deviceIndex = 0,
   };
   VkSemaphoreSubmitInfo signal_semaphore_info = {
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+      .pNext = nullptr,
+      .semaphore = VK_NULL_HANDLE,
+      .value = 0,
       .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+      .deviceIndex = 0,
   };
 
   SubmitHandle last_submit_handle{};

@@ -19,13 +19,13 @@ constexpr auto max(T0 &&first, Ts &&...rest) {
 }
 
 VkTexture::VkTexture(IContext &ctx, const VkTextureDescription &description)
-    : image_owns_itself{description.is_owning},
+    : sample_count{description.sample_count},
+      image_owns_itself{description.is_owning},
       is_swapchain{description.is_swapchain},
       sampled{static_cast<bool>(description.usage_flags &
                                 TextureUsageFlags::Sampled)},
       storage{static_cast<bool>(description.usage_flags &
-                                TextureUsageFlags::Storage)},
-      sample_count{description.sample_count} {
+                                TextureUsageFlags::Storage)} {
   auto &allocator = ctx.get_allocator_implementation();
 
   VkImageCreateInfo image_info{};

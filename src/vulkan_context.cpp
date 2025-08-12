@@ -618,6 +618,7 @@ auto Context::update_descriptor_sets() -> Expected<void, ContextError> {
       {
           .sType =
               VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+          .pNext = nullptr,
           .bindingCount = static_cast<std::uint32_t>(binding_flags.size()),
           .pBindingFlags = binding_flags.data(),
       };
@@ -657,6 +658,7 @@ auto Context::update_descriptor_sets() -> Expected<void, ContextError> {
 
   const VkDescriptorPoolCreateInfo pool_create_info = {
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+      .pNext = nullptr,
       .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT |
                VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
       .maxSets = 1,
@@ -672,6 +674,7 @@ auto Context::update_descriptor_sets() -> Expected<void, ContextError> {
   // Allocate the descriptor set
   VkDescriptorSetAllocateInfo alloc_info = {
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+      .pNext = nullptr,
       .descriptorPool = descriptor_pool,
       .descriptorSetCount = 1,
       .pSetLayouts = &descriptor_set_layout};
