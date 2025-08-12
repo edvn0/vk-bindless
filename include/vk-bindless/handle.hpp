@@ -49,6 +49,7 @@ using ShaderModuleHandle = Handle<class ShaderModule>;
 using SamplerHandle = Handle<class Sampler>;
 using BufferHandle = Handle<class Buffer>;
 using TextureHandle = Handle<class Texture>;
+using QueryPoolHandle = Handle<class QueryPool>;
 
 #define FOR_EACH_HANDLE_TYPE(MACRO)                                            \
   MACRO(TextureHandle)                                                         \
@@ -56,7 +57,8 @@ using TextureHandle = Handle<class Texture>;
   MACRO(BufferHandle)                                                          \
   MACRO(ShaderModuleHandle)                                                    \
   MACRO(GraphicsPipelineHandle)                                                \
-  MACRO(ComputePipelineHandle)
+  MACRO(ComputePipelineHandle)                                                 \
+  MACRO(QueryPoolHandle)
 
 #define FOR_EACH_HANDLE_TYPE_WITH_TYPE_NAME(MACRO)                             \
   MACRO(TextureHandle, Texture)                                                \
@@ -64,6 +66,7 @@ using TextureHandle = Handle<class Texture>;
   MACRO(BufferHandle, Buffer)                                                  \
   MACRO(ShaderModuleHandle, ShaderModule)                                      \
   MACRO(GraphicsPipelineHandle, GraphicsPipeline)                              \
-  MACRO(ComputePipelineHandle, ComputePipeline)
+  MACRO(ComputePipelineHandle, ComputePipeline)                                \
+  MACRO(QueryPoolHandle, QueryPool)
 
 } // namespace VkBindless

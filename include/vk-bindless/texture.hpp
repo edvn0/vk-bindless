@@ -13,6 +13,7 @@
 #include <memory>
 #include <optional>
 #include <vector>
+#include <vulkan/vulkan_core.h>
 
 #define MAKE_BIT_FIELD(E)                                                      \
   constexpr E operator|(const E lhs, const E rhs) {                            \
@@ -86,6 +87,7 @@ struct VkTextureDescription {
   VkImageTiling tiling{VK_IMAGE_TILING_OPTIMAL};
   VkImageLayout initial_layout{VK_IMAGE_LAYOUT_UNDEFINED};
   bool is_owning{true};
+  bool is_swapchain{false};
 
   std::string_view debug_name;
 };
@@ -117,6 +119,9 @@ public:
     return std::span(mip_layer_views);
   }
   [[nodiscard]] auto owns_self() const -> bool { return image_owns_itself; }
+  [[nodiscard]] auto is_swapchain_image() const { return is_swapchain; }
+
+  auto create_image_view(VkDevice, const VkImageViewCreateInfo &) -> void;
 
 private:
   VkImageView image_view{VK_NULL_HANDLE};
@@ -124,10 +129,9 @@ private:
   VkSampler sampler{VK_NULL_HANDLE};
   VkSampleCountFlagBits sample_count{VK_SAMPLE_COUNT_1_BIT};
   bool image_owns_itself{true};
+  bool is_swapchain{false};
 
-  std::vector<VkImageView>
-      mip_layer_views; // For n layers and m mip levels/layer,
-  // this will contain (m * n) - 1 views. The '0'th view is the base image view.
+  std::vector<VkImageView> mip_layer_views;
 
   AllocationInfo image_allocation{};
   VkImage image{VK_NULL_HANDLE};

@@ -1,8 +1,12 @@
 #include "vk-bindless/vulkan_context.hpp"
 
 #include "vk-bindless/allocator_interface.hpp"
+#include "vk-bindless/command_buffer.hpp"
+#include "vk-bindless/handle.hpp"
 #include "vk-bindless/scope_exit.hpp"
+#include "vk-bindless/swapchain.hpp"
 #include "vk-bindless/texture.hpp"
+#include "vk-bindless/transitions.hpp"
 
 #include <vk_mem_alloc.h>
 
@@ -18,6 +22,26 @@
   } while (false)
 
 namespace VkBindless {
+
+static constexpr auto create_timeline_semaphore(VkDevice device,
+                                                std::uint64_t initial_value)
+    -> VkSemaphore {
+  const VkSemaphoreTypeCreateInfo semaphoreTypeCreateInfo = {
+      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+      .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+      .initialValue = initial_value,
+  };
+  const VkSemaphoreCreateInfo ci = {
+      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+      .pNext = &semaphoreTypeCreateInfo,
+      .flags = 0,
+  };
+  VkSemaphore semaphore = VK_NULL_HANDLE;
+  VK_VERIFY(vkCreateSemaphore(device, &ci, nullptr, &semaphore));
+  // VK_ASSERT(set_debug_object_name(device, VK_OBJECT_TYPE_SEMAPHORE,
+  // (uint64_t)semaphore, debugName));
+  return semaphore;
+}
 
 constexpr VkShaderStageFlags all_stages_flags =
     VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT |
@@ -58,8 +82,10 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
 
   VkSurfaceKHR surf = surface_fn(vkb_instance.instance);
 
+  bool is_headless = false;
   if (VK_NULL_HANDLE == surf) {
     std::cerr << "Headless rendering is enabled." << std::endl;
+    is_headless = true;
   }
 
   vkb::PhysicalDeviceSelector selector{vkb_instance, surf};
@@ -136,6 +162,58 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
   context->vkb_physical_device = vkb_physical;
   context->vkb_device = vkb_device;
   context->surface = surf;
+  context->is_headless = is_headless;
+  context->swapchain = Unique<Swapchain>{new Swapchain{*context, 800U, 600U}};
+  context->timeline_semaphore = create_timeline_semaphore(
+      vkb_device.device, context->swapchain->swapchain_image_count() - 1);
+
+  std::vector<VkSurfaceFormatKHR> device_formats;
+  std::vector<VkFormat> device_depth_formats;
+  std::vector<VkPresentModeKHR> device_present_modes;
+
+  const VkFormat depth_formats[] = {
+      VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT,
+      VK_FORMAT_D16_UNORM_S8_UINT, VK_FORMAT_D32_SFLOAT, VK_FORMAT_D16_UNORM};
+  for (const auto &depth_format : depth_formats) {
+    VkFormatProperties format_properties;
+    vkGetPhysicalDeviceFormatProperties(vkb_physical.physical_device,
+                                        depth_format, &format_properties);
+
+    if (format_properties.optimalTilingFeatures) {
+      device_depth_formats.push_back(depth_format);
+    }
+  }
+
+  uint32_t formatCount;
+  vkGetPhysicalDeviceSurfaceFormatsKHR(vkb_physical.physical_device, surf,
+                                       &formatCount, nullptr);
+
+  if (formatCount) {
+    device_formats.resize(formatCount);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(vkb_physical.physical_device, surf,
+                                         &formatCount, device_formats.data());
+  }
+
+  uint32_t presentModeCount;
+  vkGetPhysicalDeviceSurfacePresentModesKHR(vkb_physical.physical_device, surf,
+                                            &presentModeCount, nullptr);
+
+  if (presentModeCount) {
+    device_present_modes.resize(presentModeCount);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(vkb_physical.physical_device,
+                                              surf, &presentModeCount,
+                                              device_present_modes.data());
+  }
+
+  context->device_surface_formats = std::move(device_formats);
+  context->device_depth_formats = std::move(device_depth_formats);
+  context->device_present_modes = std::move(device_present_modes);
+  VkSurfaceCapabilitiesKHR device_surface_capabilities = {};
+  if (surf) {
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+        vkb_physical.physical_device, surf, &device_surface_capabilities);
+  }
+  context->device_surface_capabilities = device_surface_capabilities;
 
   {
     auto q = vkb_device.get_queue(vkb::QueueType::graphics);
@@ -578,6 +656,83 @@ auto Context::get_allocator_implementation() -> IAllocator & {
   assert(allocator_impl != nullptr &&
          "Allocator implementation must be set before use");
   return *allocator_impl;
+}
+
+auto Context::acquire_command_buffer() -> ICommandBuffer & {
+  command_buffer = CommandBuffer(*this);
+  return command_buffer;
+}
+
+auto Context::submit(ICommandBuffer &commandBuffer, TextureHandle present)
+    -> SubmitHandle {
+  CommandBuffer &vk_buffer = static_cast<CommandBuffer &>(commandBuffer);
+
+#if defined(LVK_WITH_TRACY_GPU)
+  TracyVkCollect(pimpl_->tracyVkCtx_, vk_buffer.get_command_buffer());
+#endif // LVK_WITH_TRACY_GPU
+
+  if (present) {
+    const auto &tex = *texture_pool.get(present);
+
+    assert(tex->is_swapchain_image());
+
+    VkPipelineStageFlags2 src_stage =
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+    VkAccessFlags2 src_access = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT |
+                                VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+    VkPipelineStageFlags2 dst_stage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+    VkAccessFlags2 dst_access = VK_ACCESS_2_MEMORY_READ_BIT;
+
+    Transition::image(vk_buffer.get_command_buffer(), tex->get_image(),
+                      VK_IMAGE_LAYOUT_UNDEFINED,
+                      VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                      VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0,
+                                              VK_REMAINING_MIP_LEVELS, 0,
+                                              VK_REMAINING_ARRAY_LAYERS},
+                      src_stage, src_access, dst_stage, dst_access);
+  }
+
+  const auto has_swapchain = !is_headless;
+  const bool should_present = has_swapchain && present;
+
+  if (should_present) {
+    // if we a presenting a swapchain image, signal our timeline semaphore
+    const std::uint64_t signal_value =
+        swapchain->current_frame_index() + swapchain->swapchain_image_count();
+    // we wait for this value next time we want to acquire this swapchain image
+    swapchain->timeline_wait_values[swapchain->current_frame_index()] =
+        signal_value;
+    immediate_commands.signal_semaphore(timeline_semaphore, signal_value);
+  }
+
+  command_buffer.last_submit_handle =
+      immediate_commands.submit(*command_buffer.wrapper);
+
+  if (should_present) {
+    auto could =
+        swapchain->present(immediate_commands.acquire_last_submit_semaphore());
+    if (!could) {
+      // Handle presentation failure
+    }
+  }
+
+  [&] {
+    while (!pre_frame_callbacks.empty()) {
+      auto &front = pre_frame_callbacks.front();
+      front(vkb_device.device, nullptr);
+      pre_frame_callbacks.pop_front();
+    }
+  }();
+
+  SubmitHandle handle = command_buffer.last_submit_handle;
+
+  command_buffer = {};
+
+  return handle;
+}
+
+auto Context::get_current_swapchain_texture() -> TextureHandle {
+  return swapchain->current_texture();
 }
 
 #pragma region Destroyers

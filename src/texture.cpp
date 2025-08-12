@@ -19,6 +19,7 @@ constexpr auto max(T0 &&first, Ts &&...rest) {
 
 VkTexture::VkTexture(IContext &ctx, const VkTextureDescription &description)
     : image_owns_itself{description.is_owning},
+      is_swapchain{description.is_swapchain},
       sampled{static_cast<bool>(description.usage_flags &
                                 TextureUsageFlags::Sampled)},
       storage{static_cast<bool>(description.usage_flags &
@@ -69,6 +70,10 @@ VkTexture::VkTexture(IContext &ctx, const VkTextureDescription &description)
   auto &&[img, alloc] = std::move(could_allocate.value());
   image = img;
   image_allocation = alloc;
+
+  // We don't want to create swapchain views here.
+  if (is_swapchain)
+    return;
 
   // Lets create all views
   VkImageViewCreateInfo view_info{};
@@ -149,6 +154,14 @@ auto VkTextureSampler::create(IContext &context,
       &context,
       std::move(handle),
   };
+}
+
+auto VkTexture::create_image_view(VkDevice device,
+                                  const VkImageViewCreateInfo &view_info)
+    -> void {
+  VkImageViewCreateInfo copy = view_info;
+  copy.image = image;
+  VK_VERIFY(vkCreateImageView(device, &copy, nullptr, &image_view));
 }
 
 } // namespace VkBindless

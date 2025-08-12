@@ -121,22 +121,17 @@ auto main() -> std::int32_t {
   double last_time = glfwGetTime();
   double fps_time_accumulator = 0.0;
 
+  std::int32_t width = 0, height = 0;
+
   while (!glfwWindowShouldClose(window.get())) {
     glfwPollEvents();
+    glfwGetFramebufferSize(window.get(), &width, &height);
+    if (!width || !height)
+      continue;
 
-    double now = glfwGetTime();
-    double dt = now - last_time;
-    last_time = now;
-
-    frame_count++;
-    fps_time_accumulator += dt;
-
-    if (fps_time_accumulator >= 1.0) {
-      double fps = frame_count / fps_time_accumulator;
-      glfwSetWindowTitle(window.get(), std::format("FPS: {:.2f}", fps).c_str());
-      frame_count = 0;
-      fps_time_accumulator = 0.0;
-    }
+    auto &buf = vulkan_context->acquire_command_buffer();
+    vulkan_context->submit(buf,
+                           vulkan_context->get_current_swapchain_texture());
   }
 
   return 0;

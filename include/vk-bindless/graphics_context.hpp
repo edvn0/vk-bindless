@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vk-bindless/commands.hpp"
 #include "vk-bindless/expected.hpp"
 #include "vk-bindless/forward.hpp"
 #include "vk-bindless/handle.hpp"
@@ -57,6 +58,11 @@ struct IContext {
 
   virtual auto get_texture_pool() -> TexturePool & = 0;
   virtual auto get_sampler_pool() -> SamplerPool & = 0;
+
+  virtual auto acquire_command_buffer() -> ICommandBuffer & = 0;
+  virtual auto submit(ICommandBuffer &, TextureHandle present)
+      -> SubmitHandle = 0;
+  virtual auto get_current_swapchain_texture() -> TextureHandle = 0;
 };
 
 } // namespace VkBindless

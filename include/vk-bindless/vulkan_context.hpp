@@ -1,8 +1,11 @@
 #pragma once
 
+#include "vk-bindless/command_buffer.hpp"
+#include "vk-bindless/commands.hpp"
 #include "vk-bindless/expected.hpp"
 #include "vk-bindless/graphics_context.hpp"
 #include "vk-bindless/object_pool.hpp"
+#include "vk-bindless/swapchain.hpp"
 #include "vk-bindless/texture.hpp"
 #include "vk-bindless/types.hpp"
 
@@ -10,6 +13,7 @@
 #include <memory>
 
 #include <VkBootstrap.h>
+#include <vulkan/vulkan_core.h>
 
 namespace VkBindless {
 
@@ -51,11 +55,18 @@ public:
   auto get_texture_pool() -> TexturePool & override { return texture_pool; }
   auto get_sampler_pool() -> SamplerPool & override { return sampler_pool; }
 
+  auto acquire_command_buffer() -> ICommandBuffer & override;
+  auto submit(ICommandBuffer &cmd_buffer, TextureHandle present)
+      -> SubmitHandle override;
+  auto get_current_swapchain_texture() -> TextureHandle override;
+
 private:
   vkb::Instance vkb_instance{};
   vkb::PhysicalDevice vkb_physical_device{};
   vkb::Device vkb_device{};
   VkSurfaceKHR surface{};
+  Unique<Swapchain> swapchain{};
+  VkSemaphore timeline_semaphore{VK_NULL_HANDLE};
 
   VkQueue graphics_queue{};
   VkQueue compute_queue{};
@@ -78,7 +89,19 @@ private:
   Handle<Texture> dummy_texture;
   Handle<Sampler> dummy_sampler;
 
+  ImmediateCommands immediate_commands{
+      vkb_device.device,
+      graphics_queue_family,
+      "Immediate Commands",
+  };
+  bool is_headless{false};
+  CommandBuffer command_buffer{};
   Unique<IAllocator> allocator_impl{nullptr, default_deleter<IAllocator>};
+  std::vector<VkSurfaceFormatKHR> device_surface_formats;
+  std::vector<VkFormat> device_depth_formats;
+  std::vector<VkPresentModeKHR> device_present_modes;
+  ColorSpace swapchain_requested_colour_space{ColorSpace::SRGB_NONLINEAR};
+  VkSurfaceCapabilitiesKHR device_surface_capabilities{};
 
   std::deque<PreFrameCallback> pre_frame_callbacks{};
 
@@ -90,6 +113,8 @@ private:
   auto update_descriptor_sets() -> Expected<void, ContextError>;
 
   using base = IContext;
+
+  friend class Swapchain;
 };
 
 } // namespace VkBindless

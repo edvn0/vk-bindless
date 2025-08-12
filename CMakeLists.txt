@@ -23,7 +23,7 @@ add_subdirectory(third-party)
 
 find_package(Vulkan REQUIRED)
 
-add_library(${PROJECT_NAME} STATIC src/graphics_context.cpp src/vulkan_context.cpp src/texture.cpp src/types.cpp src/vma_allocator_impl.cpp)
+add_library(${PROJECT_NAME} STATIC src/graphics_context.cpp src/vulkan_context.cpp src/texture.cpp src/types.cpp src/vma_allocator_impl.cpp src/commands.cpp src/command_buffer.cpp src/swapchain.cpp)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan vk-bootstrap GPUOpen::VulkanMemoryAllocator)
 target_include_directories(${PROJECT_NAME} PUBLIC ${Vulkan_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/third-party/vk-bootstrap/src)
