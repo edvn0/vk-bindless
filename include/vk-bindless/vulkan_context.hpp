@@ -13,9 +13,26 @@
 #include <memory>
 
 #include <VkBootstrap.h>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.h>
 
 namespace VkBindless {
+
+inline auto set_name_for_object(auto device, const auto type, const auto handle,
+                                const std::string_view name) {
+  VkDebugUtilsObjectNameInfoEXT name_info{
+      .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+      .pNext = nullptr,
+      .objectType = type,
+      .objectHandle = std::bit_cast<std::uint64_t>(handle),
+      .pObjectName = name.data(),
+  };
+  static auto vkSetDebugUtilsObjectNameEXT =
+      reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(
+          vkGetDeviceProcAddr(device, "vkSetDebugUtilsObjectNameEXT"));
+  if (vkSetDebugUtilsObjectNameEXT) {
+    vkSetDebugUtilsObjectNameEXT(device, &name_info);
+  }
+};
 
 class Context final : public IContext {
 public:
@@ -60,6 +77,8 @@ public:
       -> SubmitHandle override;
   auto get_current_swapchain_texture() -> TextureHandle override;
 
+  auto get_immediate_commands() -> auto & { return *immediate_commands; }
+
 private:
   vkb::Instance vkb_instance{};
   vkb::PhysicalDevice vkb_physical_device{};
@@ -89,11 +108,7 @@ private:
   Handle<Texture> dummy_texture;
   Handle<Sampler> dummy_sampler;
 
-  ImmediateCommands immediate_commands{
-      vkb_device.device,
-      graphics_queue_family,
-      "Immediate Commands",
-  };
+  std::unique_ptr<ImmediateCommands> immediate_commands{nullptr};
   bool is_headless{false};
   CommandBuffer command_buffer{};
   Unique<IAllocator> allocator_impl{nullptr, default_deleter<IAllocator>};
@@ -102,6 +117,7 @@ private:
   std::vector<VkPresentModeKHR> device_present_modes;
   ColorSpace swapchain_requested_colour_space{ColorSpace::SRGB_NONLINEAR};
   VkSurfaceCapabilitiesKHR device_surface_capabilities{};
+  bool has_swapchain_maintenance_1{false};
 
   std::deque<PreFrameCallback> pre_frame_callbacks{};
 

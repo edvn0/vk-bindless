@@ -74,7 +74,9 @@ auto main() -> std::int32_t {
   using namespace VkBindless;
   using GLFWPointer = std::unique_ptr<GLFWwindow, decltype(&destroy_glfw)>;
 
+#ifndef _WIN32
   glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+#endif
   if (!glfwInit()) {
     const char *error{};
     glfwGetError(&error);

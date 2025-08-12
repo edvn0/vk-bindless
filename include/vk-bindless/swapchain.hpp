@@ -31,16 +31,15 @@ public:
   auto swapchain_current_image_index() const -> std::uint32_t;
   auto swapchain_image_count() const -> std::uint32_t;
 
-  auto context() const -> IContext &;
+  auto context() -> IContext &;
   auto graphics_queue() const -> VkQueue;
-  auto width() const -> std::uint32_t;
-  auto height() const -> std::uint32_t;
-  auto current_frame_index() const -> std::uint64_t;
+  auto width() const -> std::uint32_t { return swapchain_width; }
+  auto height() const -> std::uint32_t { return swapchain_height; }
+  auto current_frame_index() const -> std::uint64_t { return frame_index; }
   auto next_image_needed() const -> bool;
-  auto swapchain_handle() const -> VkSwapchainKHR;
+  auto swapchain_handle() const -> VkSwapchainKHR { return swapchain_khr; }
 
   auto set_size(std::uint32_t width, std::uint32_t height) -> void;
-  auto set_graphics_queue(VkQueue queue) -> void;
   auto set_next_image_needed(bool value) -> void;
 
 private:
@@ -53,7 +52,10 @@ private:
   std::uint64_t frame_index = 0;
   bool need_next_image = true;
   VkSwapchainKHR swapchain_khr = VK_NULL_HANDLE;
-  VkSurfaceFormatKHR swapchain_surface_format{.format = VK_FORMAT_UNDEFINED};
+  VkSurfaceFormatKHR swapchain_surface_format{
+      .format = VK_FORMAT_UNDEFINED,
+      .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+  };
   std::array<TextureHandle, max_swapchain_images> swapchain_textures{};
   std::array<VkSemaphore, max_swapchain_images> acquire_semaphores{};
   std::array<VkFence, max_swapchain_images> present_fences{};

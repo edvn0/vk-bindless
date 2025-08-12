@@ -1,5 +1,7 @@
 #include "vk-bindless/commands.hpp"
 #include "vk-bindless/types.hpp"
+#include "vk-bindless/vulkan_context.hpp"
+#include <cassert>
 #include <format>
 #include <stdexcept>
 #include <vulkan/vulkan_core.h>
@@ -18,23 +20,23 @@ static auto create_semaphore(VkDevice device, std::string_view name) {
     throw std::runtime_error("Failed to create semaphore");
   }
   if (!name.empty()) {
-    // Assign debug name to semaphore
+    set_name_for_object(device, VK_OBJECT_TYPE_SEMAPHORE, semaphore, name);
   }
   return semaphore;
 }
 
-static auto create_fence(VkDevice device, std::string_view name) {
+static auto create_fence(VkDevice device, const std::string_view name) {
   VkFence fence;
   VkFenceCreateInfo create_info{
       .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
       .pNext = nullptr,
-      .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+      .flags = 0,
   };
   if (vkCreateFence(device, &create_info, nullptr, &fence) != VK_SUCCESS) {
     throw std::runtime_error("Failed to create fence");
   }
   if (!name.empty()) {
-    // Assign debug name to fence
+    set_name_for_object(device, VK_OBJECT_TYPE_FENCE, fence, name);
   }
   return fence;
 }
@@ -89,7 +91,7 @@ auto ImmediateCommands::acquire() -> CommandBufferWrapper & {
     purge();
 
   CommandBufferWrapper *current = nullptr;
-  for (CommandBufferWrapper &buf : command_buffers) {
+  for (auto &buf : command_buffers) {
     if (buf.command_buffer == VK_NULL_HANDLE) {
       current = &buf;
       break;
@@ -164,10 +166,12 @@ auto ImmediateCommands::submit(const CommandBufferWrapper &wrapper)
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
       .pNext = nullptr,
       .commandBuffer = wrapper.command_buffer,
+      .deviceMask = 0,
   };
   const VkSubmitInfo2 si = {
       .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
       .pNext = nullptr,
+      .flags = 0,
       .waitSemaphoreInfoCount = wait_semaphore_count,
       .pWaitSemaphoreInfos = wait_semaphores.data(),
       .commandBufferInfoCount = 1u,
@@ -228,6 +232,23 @@ auto ImmediateCommands::wait_all() -> void {
                               UINT64_MAX));
   }
   purge();
+}
+
+auto ImmediateCommands::wait_semaphore(VkSemaphore s) -> void {
+  assert(wait_semaphore_info.semaphore == VK_NULL_HANDLE);
+  wait_semaphore_info.semaphore = s;
+}
+
+void ImmediateCommands::signal_semaphore(VkSemaphore semaphore,
+                                         std::uint64_t signalValue) {
+  assert(signal_semaphore_info.semaphore == VK_NULL_HANDLE);
+
+  signal_semaphore_info.semaphore = semaphore;
+  signal_semaphore_info.value = signalValue;
+}
+
+auto ImmediateCommands::acquire_last_submit_semaphore() -> VkSemaphore {
+  return std::exchange(last_submit_semaphore.semaphore, VK_NULL_HANDLE);
 }
 
 } // namespace VkBindless

@@ -2,6 +2,7 @@
 
 #include "vk-bindless/graphics_context.hpp"
 #include "vk-bindless/handle.hpp"
+
 #include <cstddef>
 #include <cstdint>
 
@@ -396,13 +397,13 @@ public:
 class CommandBuffer final : public ICommandBuffer {
 public:
   CommandBuffer() = default;
-  CommandBuffer(IContext &ctx) : context(&ctx) {}
+  CommandBuffer(IContext &);
   ~CommandBuffer() override;
 
   auto get_command_buffer() const { return wrapper->command_buffer; }
 
 private:
-  IContext *context{nullptr};
+  Context *context{nullptr};
   const CommandBufferWrapper *wrapper{nullptr};
 
   Framebuffer framebuffer = {};

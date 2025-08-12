@@ -3,6 +3,8 @@
 #include "vk-bindless/graphics_context.hpp"
 #include "vk-bindless/texture.hpp"
 #include "vk-bindless/vulkan_context.hpp"
+#include <bit>
+#include <vulkan/vulkan_core.h>
 
 namespace VkBindless {
 
@@ -80,23 +82,31 @@ auto choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &formats,
 }
 } // namespace
 
+auto Swapchain::swapchain_image_count() const -> std::uint32_t {
+  return image_count;
+}
+
+auto Swapchain::context() -> IContext & { return context_ref; }
+
 auto Swapchain::current_texture() -> TextureHandle {
   auto &vulkan_context = static_cast<Context &>(context_ref);
 
   if (need_next_image) {
-    const VkSemaphoreWaitInfo waitInfo = {
+    const VkSemaphoreWaitInfo wait_info = {
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .semaphoreCount = 1,
         .pSemaphores = &vulkan_context.timeline_semaphore,
         .pValues = &timeline_wait_values[swapchain_image_index],
     };
-    vkWaitSemaphores(vulkan_context.get_device(), &waitInfo, UINT64_MAX);
+    vkWaitSemaphores(vulkan_context.get_device(), &wait_info, UINT64_MAX);
     VkSemaphore acquireSemaphore = acquire_semaphores[swapchain_image_index];
     vkAcquireNextImageKHR(vulkan_context.get_device(), swapchain_khr,
                           UINT64_MAX, acquireSemaphore, VK_NULL_HANDLE,
                           &swapchain_image_index);
     need_next_image = false;
-    vulkan_context.immediate_commands.wait_semaphore(acquireSemaphore);
+    vulkan_context.immediate_commands->wait_semaphore(acquireSemaphore);
   }
 
   if (swapchain_image_index < swapchain_image_count()) {
@@ -104,6 +114,26 @@ auto Swapchain::current_texture() -> TextureHandle {
   }
 
   return TextureHandle{};
+}
+
+auto Swapchain::current_vk_image() const -> VkImage {
+  if (swapchain_current_image_index() < image_count) {
+    auto *tex = context_ref.texture_pool
+                    .get(swapchain_textures.at(swapchain_current_image_index()))
+                    .value();
+    return tex->get_image();
+  }
+  return VK_NULL_HANDLE;
+}
+
+auto Swapchain::current_vk_image_view() const -> VkImageView {
+  if (swapchain_current_image_index() < image_count) {
+    auto *tex = context_ref.texture_pool
+                    .get(swapchain_textures.at(swapchain_current_image_index()))
+                    .value();
+    return tex->get_image_view();
+  }
+  return VK_NULL_HANDLE;
 }
 
 Swapchain::Swapchain(IContext &ctx, uint32_t width, uint32_t height)
@@ -114,14 +144,14 @@ Swapchain::Swapchain(IContext &ctx, uint32_t width, uint32_t height)
       context_ref.device_surface_formats,
       context_ref.swapchain_requested_colour_space, true);
 
-  VkBool32 queueFamilySupportsPresentation = VK_FALSE;
+  VkBool32 queue_family_supports_presentation = VK_FALSE;
   VK_VERIFY(vkGetPhysicalDeviceSurfaceSupportKHR(
       ctx.get_physical_device(),
       context_ref.get_queue_family_index_unsafe(Queue::Graphics),
-      context_ref.surface, &queueFamilySupportsPresentation));
-  assert(queueFamilySupportsPresentation);
+      context_ref.surface, &queue_family_supports_presentation));
+  assert(queue_family_supports_presentation);
 
-  auto chooseSwapImageCount =
+  auto choose_swapchain_image_count =
       [](const VkSurfaceCapabilitiesKHR &caps) -> uint32_t {
     const uint32_t desired = caps.minImageCount + 1;
     const bool exceeded =
@@ -129,7 +159,7 @@ Swapchain::Swapchain(IContext &ctx, uint32_t width, uint32_t height)
     return exceeded ? caps.maxImageCount : desired;
   };
 
-  auto chooseSwapPresentMode =
+  auto choose_swapchain_present_mode =
       [](const std::vector<VkPresentModeKHR> &modes) -> VkPresentModeKHR {
 #if defined(__linux__) || defined(_M_ARM64)
     if (std::find(modes.cbegin(), modes.cend(),
@@ -144,8 +174,8 @@ Swapchain::Swapchain(IContext &ctx, uint32_t width, uint32_t height)
     return VK_PRESENT_MODE_FIFO_KHR;
   };
 
-  auto chooseUsageFlags = [](VkPhysicalDevice pd, VkSurfaceKHR surface,
-                             VkFormat format) -> VkImageUsageFlags {
+  auto choose_usage_flags = [](VkPhysicalDevice pd, VkSurfaceKHR surface,
+                               VkFormat format) -> VkImageUsageFlags {
     VkImageUsageFlags usageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                    VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
@@ -169,8 +199,8 @@ Swapchain::Swapchain(IContext &ctx, uint32_t width, uint32_t height)
   };
 
   const VkImageUsageFlags usageFlags =
-      chooseUsageFlags(ctx.get_physical_device(), context_ref.surface,
-                       swapchain_surface_format.format);
+      choose_usage_flags(ctx.get_physical_device(), context_ref.surface,
+                         swapchain_surface_format.format);
   const bool is_composite_alpha_opaque_supported =
       (context_ref.device_surface_capabilities.supportedCompositeAlpha &
        VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) != 0;
@@ -180,26 +210,29 @@ Swapchain::Swapchain(IContext &ctx, uint32_t width, uint32_t height)
 
   const VkSwapchainCreateInfoKHR ci = {
       .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+      .pNext = nullptr,
+      .flags = 0,
       .surface = context_ref.surface,
       .minImageCount =
-          chooseSwapImageCount(context_ref.device_surface_capabilities),
+          choose_swapchain_image_count(context_ref.device_surface_capabilities),
       .imageFormat = swapchain_surface_format.format,
       .imageColorSpace = swapchain_surface_format.colorSpace,
-      .imageExtent = {.width = width, .height = height},
+      .imageExtent =
+          {
+              .width = width,
+              .height = height,
+          },
       .imageArrayLayers = 1,
       .imageUsage = usageFlags,
       .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
       .queueFamilyIndexCount = 1,
       .pQueueFamilyIndices = queueFamilyIndices.data(),
-#if defined(ANDROID)
-      .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
-#else
       .preTransform = context_ref.device_surface_capabilities.currentTransform,
-#endif
       .compositeAlpha = is_composite_alpha_opaque_supported
                             ? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
                             : VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
-      .presentMode = chooseSwapPresentMode(context_ref.device_present_modes),
+      .presentMode =
+          choose_swapchain_present_mode(context_ref.device_present_modes),
       .clipped = VK_TRUE,
       .oldSwapchain = VK_NULL_HANDLE,
   };
@@ -233,8 +266,11 @@ vkSetHdrMetadataEXT(device_, 1, &swapchain_, &metadata);
 
   static constexpr auto create_semaphore = [](VkDevice device,
                                               std::string_view) -> VkSemaphore {
-    auto semaphore_info =
-        VkSemaphoreCreateInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    const VkSemaphoreCreateInfo semaphore_info{
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+    };
     VkSemaphore semaphore;
     VK_VERIFY(vkCreateSemaphore(device, &semaphore_info, nullptr, &semaphore));
     // set_debug_object_name(device, VK_OBJECT_TYPE_SEMAPHORE,
@@ -264,15 +300,18 @@ vkSetHdrMetadataEXT(device_, 1, &swapchain_, &metadata);
     };
 
     image.create_image_view(context_ref.get_device(),
-                            {.viewType = VK_IMAGE_VIEW_TYPE_2D,
-                             .format = swapchain_surface_format.format,
-                             .subresourceRange = {
-                                 .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                 .baseMipLevel = 0,
-                                 .levelCount = VK_REMAINING_MIP_LEVELS,
-                                 .baseArrayLayer = 0,
-                                 .layerCount = 1,
-                             }});
+                            {
+                                .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                                .format = swapchain_surface_format.format,
+                                .subresourceRange =
+                                    {
+                                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                        .baseMipLevel = 0,
+                                        .levelCount = VK_REMAINING_MIP_LEVELS,
+                                        .baseArrayLayer = 0,
+                                        .layerCount = 1,
+                                    },
+                            });
 
     swapchain_textures[i] = context_ref.texture_pool.create(std::move(image));
   }
@@ -290,6 +329,69 @@ Swapchain::~Swapchain() {
     if (fence)
       vkDestroyFence(context_ref.get_device(), fence, nullptr);
   }
+}
+
+auto Swapchain::swapchain_current_image_index() const -> std::uint32_t {
+  return swapchain_image_index;
+}
+
+auto Swapchain::set_next_image_needed(bool val) -> void {
+  need_next_image = val;
+}
+
+auto Swapchain::present(VkSemaphore wait_semaphore)
+    -> Expected<void, std::string> {
+
+  const VkSwapchainPresentFenceInfoEXT fence_info = {
+      .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_EXT,
+      .pNext = nullptr,
+      .swapchainCount = 1,
+      .pFences = &present_fences[swapchain_image_index],
+  };
+  const VkPresentInfoKHR pi = {
+      .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+      .pNext = context_ref.has_swapchain_maintenance_1 ? &fence_info : nullptr,
+      .waitSemaphoreCount = 1,
+      .pWaitSemaphores = &wait_semaphore,
+      .swapchainCount = 1u,
+      .pSwapchains = &swapchain_khr,
+      .pImageIndices = &swapchain_image_index,
+      .pResults = nullptr,
+  };
+
+  static auto create_fence = [](VkDevice device, const std::string_view name) {
+    VkFenceCreateInfo info{
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+    };
+    info.flags = 0; // start unsignaled
+    VkFence fence{};
+    if (vkCreateFence(device, &info, nullptr, &fence) != VK_SUCCESS) {
+      throw std::runtime_error("Failed to create fence");
+    }
+    // If you have debug utils naming:
+    if (!name.empty()) {
+      set_name_for_object(device, VK_OBJECT_TYPE_FENCE, fence, name);
+    }
+    return fence;
+  };
+
+  if (context_ref.has_swapchain_maintenance_1) {
+    if (!present_fences[swapchain_image_index]) {
+      present_fences[swapchain_image_index] =
+          create_fence(context_ref.get_device(), "Fence: present-fence");
+    }
+  }
+  VkResult r = vkQueuePresentKHR(graphics_queue_handle, &pi);
+  if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR &&
+      r != VK_ERROR_OUT_OF_DATE_KHR) {
+    assert((bool)r);
+  }
+  set_next_image_needed(true);
+  frame_index++;
+
+  return {};
 }
 
 } // namespace VkBindless

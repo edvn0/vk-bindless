@@ -7,6 +7,7 @@
 
 #include <cmath>
 #include <vk_mem_alloc.h>
+#include <vulkan/vulkan_core.h>
 
 namespace VkBindless {
 
@@ -161,6 +162,7 @@ auto VkTexture::create_image_view(VkDevice device,
     -> void {
   VkImageViewCreateInfo copy = view_info;
   copy.image = image;
+  copy.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
   VK_VERIFY(vkCreateImageView(device, &copy, nullptr, &image_view));
 }
 

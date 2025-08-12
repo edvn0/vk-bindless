@@ -26,7 +26,7 @@ public:
   [[nodiscard]] auto empty() const -> bool {
     return handle_generation == invalid_generation;
   }
-  explicit operator bool() const { return !valid(); }
+  explicit operator bool() const { return valid(); }
 
   [[nodiscard]] auto index() const -> std::uint32_t { return handle_index; }
   [[nodiscard]] auto generation() const -> std::uint32_t {

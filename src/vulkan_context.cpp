@@ -8,12 +8,13 @@
 #include "vk-bindless/texture.hpp"
 #include "vk-bindless/transitions.hpp"
 
+#include <ostream>
+#include <thread>
 #include <vk_mem_alloc.h>
 
 #include <VkBootstrap.h>
 #include <iostream>
 #include <memory>
-#include <queue>
 #include <vulkan/vulkan_core.h>
 
 #define TODO(message)                                                          \
@@ -28,6 +29,7 @@ static auto create_timeline_semaphore(VkDevice device,
     -> VkSemaphore {
   const VkSemaphoreTypeCreateInfo semaphoreTypeCreateInfo = {
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+      .pNext = nullptr,
       .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
       .initialValue = initial_value,
   };
@@ -65,12 +67,68 @@ Context::~Context() {
   sampler_pool.clear();
 }
 
+constexpr size_t QUEUE_SIZE = 1024;
+
+template <typename Message = std::string> struct LockFreeQueue {
+  std::array<Message, QUEUE_SIZE> buffer{};
+  std::atomic<size_t> head{0};
+  std::atomic<size_t> tail{0};
+
+  auto push(Message &&msg) {
+    size_t t = tail.load(std::memory_order_relaxed);
+    size_t next = (t + 1) % QUEUE_SIZE;
+    if (next == head.load(std::memory_order_acquire)) {
+      return false; // queue full
+    }
+    buffer[t] = std::move(msg);
+    tail.store(next, std::memory_order_release);
+    return true;
+  }
+
+  auto pop(Message &out) {
+    size_t h = head.load(std::memory_order_relaxed);
+    if (h == tail.load(std::memory_order_acquire)) {
+      return false; // empty
+    }
+    out = std::move(buffer[h]);
+    head.store((h + 1) % QUEUE_SIZE, std::memory_order_release);
+    return true;
+  }
+};
+
+static LockFreeQueue messages;
+
+static std::jthread thread{[](std::stop_token stoken) {
+  std::string msg;
+  while (!stoken.stop_requested()) {
+    while (messages.pop(msg)) {
+      std::cout << "[VK] " << msg << "\n";
+    }
+    std::flush(std::cout);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+}};
+
+static auto logger(VkDebugUtilsMessageSeverityFlagBitsEXT,
+                   VkDebugUtilsMessageTypeFlagsEXT,
+                   const VkDebugUtilsMessengerCallbackDataEXT *callbackData,
+                   void *) -> VkBool32 {
+#define IS_DEBUG
+#ifdef IS_DEBUG
+  std::cout << std::string{callbackData->pMessage} << '\n';
+  return VK_FALSE;
+#else
+  messages.push(callbackData->pMessage);
+  return VK_FALSE;
+#endif
+}
+
 auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
     -> Expected<std::unique_ptr<IContext>, ContextError> {
   vkb::InstanceBuilder builder;
   auto inst_ret = builder.set_app_name("Bindless Vulkan")
                       .request_validation_layers()
-                      .use_default_debug_messenger()
+                      .set_debug_callback(&logger)
                       .require_api_version(1, 4, 0)
                       .build();
   if (!inst_ret) {
@@ -92,6 +150,7 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
   auto phys_ret =
       selector
           .set_minimum_version(1, 3) // You can adjust from 1.0 to 1.4 here
+          .add_required_extension("VK_EXT_swapchain_maintenance1")
           /*  .add_required_extension("VK_KHR_shader_draw_parameters")
             .add_required_extension("VK_EXT_descriptor_indexing")
             .add_required_extension("VK_KHR_dynamic_rendering")
@@ -124,6 +183,7 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
   vk12_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
   vk12_features.pNext = &vk11_features;
   vk12_features.descriptorIndexing = VK_TRUE;
+  vk12_features.timelineSemaphore = VK_TRUE;
   vk12_features.runtimeDescriptorArray = VK_TRUE;
   vk12_features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
   vk12_features.descriptorBindingPartiallyBound = VK_TRUE;
@@ -141,6 +201,7 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
   vk13_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
   vk13_features.pNext = &vk12_features;
   vk13_features.dynamicRendering = VK_TRUE;
+  vk13_features.synchronization2 = VK_TRUE;
 
   VkPhysicalDeviceVulkan14Features vk14_features{};
   vk14_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
@@ -163,9 +224,6 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
   context->vkb_device = vkb_device;
   context->surface = surf;
   context->is_headless = is_headless;
-  context->swapchain = Unique<Swapchain>{new Swapchain{*context, 800U, 600U}};
-  context->timeline_semaphore = create_timeline_semaphore(
-      vkb_device.device, context->swapchain->swapchain_image_count() - 1);
 
   std::vector<VkSurfaceFormatKHR> device_formats;
   std::vector<VkFormat> device_depth_formats;
@@ -205,6 +263,11 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
                                               device_present_modes.data());
   }
 
+  auto allocator = IAllocator::create_allocator(
+      vkb_instance.instance, vkb_physical.physical_device, vkb_device.device);
+
+  context->allocator_impl = std::move(allocator);
+
   context->device_surface_formats = std::move(device_formats);
   context->device_depth_formats = std::move(device_depth_formats);
   context->device_present_modes = std::move(device_present_modes);
@@ -214,6 +277,9 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
         vkb_physical.physical_device, surf, &device_surface_capabilities);
   }
   context->device_surface_capabilities = device_surface_capabilities;
+  context->has_swapchain_maintenance_1 = true;
+  context->immediate_commands = std::make_unique<ImmediateCommands>(
+      vkb_device.device, context->graphics_queue_family, "Immediate Commands");
 
   {
     auto q = vkb_device.get_queue(vkb::QueueType::graphics);
@@ -247,10 +313,9 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
     }
   }
 
-  auto allocator = IAllocator::create_allocator(
-      vkb_instance.instance, vkb_physical.physical_device, vkb_device.device);
-
-  context->allocator_impl = std::move(allocator);
+  context->swapchain = Unique<Swapchain>{new Swapchain{*context, 800U, 600U}};
+  context->timeline_semaphore = create_timeline_semaphore(
+      vkb_device.device, context->swapchain->swapchain_image_count() - 1);
 
   context->create_placeholder_resources();
   context->update_resource_bindings();
@@ -333,19 +398,20 @@ void Context::update_resource_bindings() {
     return;
   }
 
-  constexpr auto grow_factor = 1.5F;
+  constexpr auto grow_factor = 2.F;
   auto current_textures = 1U;
   auto current_samplers = 1U;
 
-  constexpr auto grow_pool = [](const auto &pool, auto &out_max_textures) {
-    while (pool.size() > out_max_textures) {
-      out_max_textures = static_cast<std::uint32_t>(
-          static_cast<float>(out_max_textures) * grow_factor);
+  constexpr auto grow_pool = [](const auto &pool, auto out_max) {
+    while (pool.size() > out_max) {
+      out_max =
+          static_cast<std::uint32_t>(static_cast<float>(out_max) * grow_factor);
     }
+    return out_max;
   };
 
-  grow_pool(texture_pool, current_textures);
-  grow_pool(sampler_pool, current_samplers);
+  current_textures = grow_pool(texture_pool, current_textures);
+  current_samplers = grow_pool(sampler_pool, current_samplers);
 
   if (current_textures != current_max_textures ||
       current_samplers != current_max_samplers) {
@@ -403,36 +469,45 @@ void Context::update_resource_bindings() {
   if (!sampled_images.empty()) {
     writes[0] = VkWriteDescriptorSet{
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .pNext = nullptr,
         .dstSet = descriptor_set,
         .dstBinding = 0,
         .dstArrayElement = 0,
         .descriptorCount = static_cast<std::uint32_t>(sampled_images.size()),
         .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
         .pImageInfo = sampled_images.data(),
+        .pBufferInfo = nullptr,
+        .pTexelBufferView = nullptr,
     };
     write_count++;
   }
   if (!sampler_infos.empty()) {
     writes[1] = VkWriteDescriptorSet{
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .pNext = nullptr,
         .dstSet = descriptor_set,
         .dstBinding = 1,
         .dstArrayElement = 0,
         .descriptorCount = static_cast<std::uint32_t>(sampler_infos.size()),
         .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
         .pImageInfo = sampler_infos.data(),
+        .pBufferInfo = nullptr,
+        .pTexelBufferView = nullptr,
     };
     write_count++;
   }
   if (!storage_images.empty()) {
     writes[2] = VkWriteDescriptorSet{
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .pNext = nullptr,
         .dstSet = descriptor_set,
         .dstBinding = 2,
         .dstArrayElement = 0,
         .descriptorCount = static_cast<std::uint32_t>(storage_images.size()),
         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
         .pImageInfo = storage_images.data(),
+        .pBufferInfo = nullptr,
+        .pTexelBufferView = nullptr,
     };
     write_count++;
   }
@@ -701,17 +776,18 @@ auto Context::submit(ICommandBuffer &commandBuffer, TextureHandle present)
     const std::uint64_t signal_value =
         swapchain->current_frame_index() + swapchain->swapchain_image_count();
     // we wait for this value next time we want to acquire this swapchain image
-    swapchain->timeline_wait_values[swapchain->current_frame_index()] =
+    swapchain
+        ->timeline_wait_values[swapchain->swapchain_current_image_index()] =
         signal_value;
-    immediate_commands.signal_semaphore(timeline_semaphore, signal_value);
+    immediate_commands->signal_semaphore(timeline_semaphore, signal_value);
   }
 
   command_buffer.last_submit_handle =
-      immediate_commands.submit(*command_buffer.wrapper);
+      immediate_commands->submit(*command_buffer.wrapper);
 
   if (should_present) {
     auto could =
-        swapchain->present(immediate_commands.acquire_last_submit_semaphore());
+        swapchain->present(immediate_commands->acquire_last_submit_semaphore());
     if (!could) {
       // Handle presentation failure
     }
@@ -786,6 +862,10 @@ auto Context::destroy(TextureHandle handle) -> void {
 
 auto Context::destroy(BufferHandle) -> void {
   TODO("Implement buffer destruction");
+}
+
+auto Context::destroy(QueryPoolHandle) -> void {
+  TODO("Implement query pool destruction");
 }
 
 auto Context::destroy(ComputePipelineHandle) -> void {
