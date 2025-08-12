@@ -43,6 +43,9 @@ struct IContext {
   [[nodiscard]] virtual auto get_queue_family_index_unsafe(Queue queue) const
       -> std::uint32_t = 0;
 
+  virtual auto get_swapchain() -> Swapchain & = 0;
+  virtual auto resize_swapchain(std::uint32_t width, std::uint32_t height) -> void = 0;
+
   [[nodiscard]] virtual auto needs_update() -> bool & = 0;
   virtual auto update_resource_bindings() -> void {
     // Default implementation does nothing.
@@ -61,7 +64,7 @@ struct IContext {
 
   virtual auto acquire_command_buffer() -> ICommandBuffer & = 0;
   virtual auto submit(ICommandBuffer &, TextureHandle present)
-      -> SubmitHandle = 0;
+      -> Expected<SubmitHandle, std::string> = 0;
   virtual auto get_current_swapchain_texture() -> TextureHandle = 0;
 };
 

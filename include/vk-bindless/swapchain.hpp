@@ -1,13 +1,18 @@
 #pragma once
 
 #include "vk-bindless/forward.hpp"
-#include "vk-bindless/graphics_context.hpp"
+#include "vk-bindless/handle.hpp"
 
 #include <array>
 #include <cstdint>
 #include <string>
 
 namespace VkBindless {
+
+  enum class SwapchainPresentFailure {
+  OutOfDate,
+  Suboptimal,
+};
 
 class Swapchain final {
   static constexpr auto max_swapchain_images = 8U;
@@ -21,7 +26,8 @@ public:
   Swapchain(Swapchain &&) = delete;
   auto operator=(Swapchain &&) -> Swapchain & = delete;
 
-  auto present(VkSemaphore wait_semaphore) -> Expected<void, std::string>;
+  auto present(VkSemaphore wait_semaphore) -> Expected<void, SwapchainPresentFailure>;
+  auto resize(std::uint32_t,std::uint32_t) -> void;
 
   auto current_vk_image() const -> VkImage;
   auto current_vk_image_view() const -> VkImageView;

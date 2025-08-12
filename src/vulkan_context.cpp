@@ -24,19 +24,20 @@
 
 namespace VkBindless {
 
-static auto create_timeline_semaphore(VkDevice device,
-                                      std::uint64_t initial_value)
-    -> VkSemaphore {
+static auto
+create_timeline_semaphore(VkDevice device, std::uint64_t initial_value)
+  -> VkSemaphore
+{
   const VkSemaphoreTypeCreateInfo semaphoreTypeCreateInfo = {
-      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
-      .pNext = nullptr,
-      .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
-      .initialValue = initial_value,
+    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+    .pNext = nullptr,
+    .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+    .initialValue = initial_value,
   };
   const VkSemaphoreCreateInfo ci = {
-      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-      .pNext = &semaphoreTypeCreateInfo,
-      .flags = 0,
+    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+    .pNext = &semaphoreTypeCreateInfo,
+    .flags = 0,
   };
   VkSemaphore semaphore = VK_NULL_HANDLE;
   VK_VERIFY(vkCreateSemaphore(device, &ci, nullptr, &semaphore));
@@ -46,11 +47,12 @@ static auto create_timeline_semaphore(VkDevice device,
 }
 
 constexpr VkShaderStageFlags all_stages_flags =
-    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT |
-    VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
-    VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+  VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT |
+  VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
+  VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 
-Context::~Context() {
+Context::~Context()
+{
   vkDeviceWaitIdle(vkb_device.device);
 
   swapchain.reset();
@@ -71,12 +73,15 @@ Context::~Context() {
 
 constexpr size_t QUEUE_SIZE = 1024;
 
-template <typename Message = std::string> struct LockFreeQueue {
+template<typename Message = std::string>
+struct LockFreeQueue
+{
   std::array<Message, QUEUE_SIZE> buffer{};
-  std::atomic<size_t> head{0};
-  std::atomic<size_t> tail{0};
+  std::atomic<size_t> head{ 0 };
+  std::atomic<size_t> tail{ 0 };
 
-  auto push(Message &&msg) {
+  auto push(Message&& msg)
+  {
     size_t t = tail.load(std::memory_order_relaxed);
     size_t next = (t + 1) % QUEUE_SIZE;
     if (next == head.load(std::memory_order_acquire)) {
@@ -87,7 +92,8 @@ template <typename Message = std::string> struct LockFreeQueue {
     return true;
   }
 
-  auto pop(Message &out) {
+  auto pop(Message& out)
+  {
     size_t h = head.load(std::memory_order_relaxed);
     if (h == tail.load(std::memory_order_acquire)) {
       return false; // empty
@@ -100,7 +106,7 @@ template <typename Message = std::string> struct LockFreeQueue {
 
 static LockFreeQueue messages;
 
-static std::jthread thread{[](std::stop_token stoken) {
+static std::jthread thread{ [](std::stop_token stoken) {
   std::string msg;
   while (!stoken.stop_requested()) {
     while (messages.pop(msg)) {
@@ -109,15 +115,17 @@ static std::jthread thread{[](std::stop_token stoken) {
     std::flush(std::cout);
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
-}};
+} };
 
-static auto logger(VkDebugUtilsMessageSeverityFlagBitsEXT,
-                   VkDebugUtilsMessageTypeFlagsEXT,
-                   const VkDebugUtilsMessengerCallbackDataEXT *callbackData,
-                   void *) -> VkBool32 {
+static auto
+logger(VkDebugUtilsMessageSeverityFlagBitsEXT,
+       VkDebugUtilsMessageTypeFlagsEXT,
+       const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
+       void*) -> VkBool32
+{
 #define IS_DEBUG
 #ifdef IS_DEBUG
-  std::cout << std::string{callbackData->pMessage} << '\n';
+  std::cout << std::string{ callbackData->pMessage } << '\n';
   return VK_FALSE;
 #else
   messages.push(callbackData->pMessage);
@@ -125,17 +133,19 @@ static auto logger(VkDebugUtilsMessageSeverityFlagBitsEXT,
 #endif
 }
 
-auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
-    -> Expected<std::unique_ptr<IContext>, ContextError> {
+auto
+Context::create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
+  -> Expected<std::unique_ptr<IContext>, ContextError>
+{
   vkb::InstanceBuilder builder;
   auto inst_ret = builder.set_app_name("Bindless Vulkan")
-                      .request_validation_layers()
-                      .set_debug_callback(&logger)
-                      .require_api_version(1, 4, 0)
-                      .build();
+                    .request_validation_layers()
+                    .set_debug_callback(&logger)
+                    .require_api_version(1, 4, 0)
+                    .build();
   if (!inst_ret) {
     return unexpected<ContextError>(
-        ContextError{"Failed to create Vulkan instance"});
+      ContextError{ "Failed to create Vulkan instance" });
   }
 
   vkb::Instance vkb_instance = inst_ret.value();
@@ -148,33 +158,33 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
     is_headless = true;
   }
 
-  vkb::PhysicalDeviceSelector selector{vkb_instance, surf};
+  vkb::PhysicalDeviceSelector selector{ vkb_instance, surf };
   auto phys_ret =
-      selector
-          .set_minimum_version(1, 3) // You can adjust from 1.0 to 1.4 here
-          /*  .add_required_extension("VK_KHR_shader_draw_parameters")
-            .add_required_extension("VK_EXT_descriptor_indexing")
-            .add_required_extension("VK_KHR_dynamic_rendering")
-            .add_required_extension("VK_KHR_depth_stencil_resolve")
-            .add_required_extension("VK_KHR_create_renderpass2")
-            .add_required_extension(VK_KHR_DEVICE_GROUP_EXTENSION_NAME)
-            .add_required_extension(VK_KHR_DEVICE_GROUP_CREATION_EXTENSION_NAME)
-            .add_required_extension("VK_KHR_multiview")
-            .add_required_extension("VK_KHR_maintenance2")
-            .add_required_extension(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME)
-            .add_required_extension(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME)
-            .add_required_extension(VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME)
-            .add_required_extension("VK_KHR_maintenance3")
-            */
-          .select();
+    selector
+      .set_minimum_version(1, 3) // You can adjust from 1.0 to 1.4 here
+      /*  .add_required_extension("VK_KHR_shader_draw_parameters")
+        .add_required_extension("VK_EXT_descriptor_indexing")
+        .add_required_extension("VK_KHR_dynamic_rendering")
+        .add_required_extension("VK_KHR_depth_stencil_resolve")
+        .add_required_extension("VK_KHR_create_renderpass2")
+        .add_required_extension(VK_KHR_DEVICE_GROUP_EXTENSION_NAME)
+        .add_required_extension(VK_KHR_DEVICE_GROUP_CREATION_EXTENSION_NAME)
+        .add_required_extension("VK_KHR_multiview")
+        .add_required_extension("VK_KHR_maintenance2")
+        .add_required_extension(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME)
+        .add_required_extension(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME)
+        .add_required_extension(VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME)
+        .add_required_extension("VK_KHR_maintenance3")
+        */
+      .select();
   if (!phys_ret) {
     std::cout << "Failed to select Vulkan physical device: "
               << phys_ret.error().message() << std::endl;
     return unexpected<ContextError>(
-        ContextError{"Failed to select Vulkan physical device"});
+      ContextError{ "Failed to select Vulkan physical device" });
   }
 
-  const vkb::PhysicalDevice &vkb_physical = phys_ret.value();
+  const vkb::PhysicalDevice& vkb_physical = phys_ret.value();
 
   VkPhysicalDeviceVulkan11Features vk11_features{};
   vk11_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
@@ -208,16 +218,16 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
   vk14_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
   vk14_features.pNext = &vk13_features;
 
-  vkb::DeviceBuilder dev_builder{vkb_physical};
+  vkb::DeviceBuilder dev_builder{ vkb_physical };
   dev_builder.add_pNext(&vk14_features);
 
   auto dev_ret = dev_builder.build();
   if (!dev_ret) {
     return unexpected<ContextError>(
-        ContextError{"Failed to create logical device"});
+      ContextError{ "Failed to create logical device" });
   }
 
-  const vkb::Device &vkb_device = dev_ret.value();
+  const vkb::Device& vkb_device = dev_ret.value();
 
   auto context = std::make_unique<Context>();
   context->vkb_instance = vkb_instance;
@@ -230,13 +240,15 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
   std::vector<VkFormat> device_depth_formats;
   std::vector<VkPresentModeKHR> device_present_modes;
 
-  const VkFormat depth_formats[] = {
-      VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT,
-      VK_FORMAT_D16_UNORM_S8_UINT, VK_FORMAT_D32_SFLOAT, VK_FORMAT_D16_UNORM};
-  for (const auto &depth_format : depth_formats) {
+  const VkFormat depth_formats[] = { VK_FORMAT_D32_SFLOAT_S8_UINT,
+                                     VK_FORMAT_D24_UNORM_S8_UINT,
+                                     VK_FORMAT_D16_UNORM_S8_UINT,
+                                     VK_FORMAT_D32_SFLOAT,
+                                     VK_FORMAT_D16_UNORM };
+  for (const auto& depth_format : depth_formats) {
     VkFormatProperties format_properties;
-    vkGetPhysicalDeviceFormatProperties(vkb_physical.physical_device,
-                                        depth_format, &format_properties);
+    vkGetPhysicalDeviceFormatProperties(
+      vkb_physical.physical_device, depth_format, &format_properties);
 
     if (format_properties.optimalTilingFeatures) {
       device_depth_formats.push_back(depth_format);
@@ -244,28 +256,29 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
   }
 
   uint32_t formatCount;
-  vkGetPhysicalDeviceSurfaceFormatsKHR(vkb_physical.physical_device, surf,
-                                       &formatCount, nullptr);
+  vkGetPhysicalDeviceSurfaceFormatsKHR(
+    vkb_physical.physical_device, surf, &formatCount, nullptr);
 
   if (formatCount) {
     device_formats.resize(formatCount);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(vkb_physical.physical_device, surf,
-                                         &formatCount, device_formats.data());
+    vkGetPhysicalDeviceSurfaceFormatsKHR(
+      vkb_physical.physical_device, surf, &formatCount, device_formats.data());
   }
 
   uint32_t presentModeCount;
-  vkGetPhysicalDeviceSurfacePresentModesKHR(vkb_physical.physical_device, surf,
-                                            &presentModeCount, nullptr);
+  vkGetPhysicalDeviceSurfacePresentModesKHR(
+    vkb_physical.physical_device, surf, &presentModeCount, nullptr);
 
   if (presentModeCount) {
     device_present_modes.resize(presentModeCount);
     vkGetPhysicalDeviceSurfacePresentModesKHR(vkb_physical.physical_device,
-                                              surf, &presentModeCount,
+                                              surf,
+                                              &presentModeCount,
                                               device_present_modes.data());
   }
 
   auto allocator = IAllocator::create_allocator(
-      vkb_instance.instance, vkb_physical.physical_device, vkb_device.device);
+    vkb_instance.instance, vkb_physical.physical_device, vkb_device.device);
 
   context->allocator_impl = std::move(allocator);
 
@@ -275,20 +288,20 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
   VkSurfaceCapabilitiesKHR device_surface_capabilities = {};
   if (surf) {
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
-        vkb_physical.physical_device, surf, &device_surface_capabilities);
+      vkb_physical.physical_device, surf, &device_surface_capabilities);
   }
   context->device_surface_capabilities = device_surface_capabilities;
   context->has_swapchain_maintenance_1 = false;
   context->immediate_commands = std::make_unique<ImmediateCommands>(
-      vkb_device.device, context->graphics_queue_family, "Immediate Commands");
+    vkb_device.device, context->graphics_queue_family, "Immediate Commands");
 
   {
     auto q = vkb_device.get_queue(vkb::QueueType::graphics);
     if (!q)
-      return unexpected<ContextError>(ContextError{"Missing graphics queue"});
+      return unexpected<ContextError>(ContextError{ "Missing graphics queue" });
     context->graphics_queue = q.value();
     context->graphics_queue_family =
-        vkb_device.get_queue_index(vkb::QueueType::graphics).value();
+      vkb_device.get_queue_index(vkb::QueueType::graphics).value();
   }
 
   {
@@ -299,7 +312,7 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
 
       context->compute_queue = q.value();
       context->compute_queue_family =
-          vkb_device.get_queue_index(vkb::QueueType::compute).value();
+        vkb_device.get_queue_index(vkb::QueueType::compute).value();
     }
   }
 
@@ -310,13 +323,14 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
     } else {
       context->transfer_queue = q.value();
       context->transfer_queue_family =
-          vkb_device.get_queue_index(vkb::QueueType::transfer).value();
+        vkb_device.get_queue_index(vkb::QueueType::transfer).value();
     }
   }
 
-  context->swapchain = Unique<Swapchain>{new Swapchain{*context, 800U, 600U}};
+  context->swapchain =
+    Unique<Swapchain>{ new Swapchain{ *context, 800U, 600U } };
   context->timeline_semaphore = create_timeline_semaphore(
-      vkb_device.device, context->swapchain->swapchain_image_count() - 1);
+    vkb_device.device, context->swapchain->swapchain_image_count() - 1);
 
   context->create_placeholder_resources();
   context->update_resource_bindings();
@@ -324,78 +338,92 @@ auto Context::create(std::function<VkSurfaceKHR(VkInstance)> &&surface_fn)
   return context;
 }
 
-auto Context::get_queue(const Queue queue) const
-    -> Expected<VkQueue, ContextError> {
+auto
+Context::get_queue(const Queue queue) const -> Expected<VkQueue, ContextError>
+{
   switch (queue) {
     using enum VkBindless::Queue;
-  case Graphics:
-    return graphics_queue;
-  case Compute:
-    return compute_queue;
-  case Transfer:
-    return transfer_queue;
+    case Graphics:
+      return graphics_queue;
+    case Compute:
+      return compute_queue;
+    case Transfer:
+      return transfer_queue;
   }
-  return unexpected<ContextError>(ContextError{"Invalid queue requested"});
+  return unexpected<ContextError>(ContextError{ "Invalid queue requested" });
 }
 
-auto Context::get_queue_family_index(const Queue queue) const
-    -> Expected<std::uint32_t, ContextError> {
+auto
+Context::get_queue_family_index(const Queue queue) const
+  -> Expected<std::uint32_t, ContextError>
+{
   switch (queue) {
     using enum VkBindless::Queue;
-  case Graphics:
-    return graphics_queue_family;
-  case Compute:
-    return compute_queue_family;
-  case Transfer:
-    return transfer_queue_family;
+    case Graphics:
+      return graphics_queue_family;
+    case Compute:
+      return compute_queue_family;
+    case Transfer:
+      return transfer_queue_family;
   }
   return unexpected<ContextError>(
-      ContextError{"Invalid queue family requested"});
+    ContextError{ "Invalid queue family requested" });
 }
 
-auto Context::get_device() const -> const VkDevice & {
+auto
+Context::get_device() const -> const VkDevice&
+{
   return vkb_device.device;
 }
 
-auto Context::get_physical_device() const -> const VkPhysicalDevice & {
+auto
+Context::get_physical_device() const -> const VkPhysicalDevice&
+{
   return vkb_physical_device.physical_device;
 }
 
-auto Context::get_instance() const -> const VkInstance & {
+auto
+Context::get_instance() const -> const VkInstance&
+{
   return vkb_instance.instance;
 }
 
-auto Context::get_queue_unsafe(Queue queue) const -> const VkQueue & {
+auto
+Context::get_queue_unsafe(Queue queue) const -> const VkQueue&
+{
   switch (queue) {
     using enum VkBindless::Queue;
-  case Graphics:
-    return graphics_queue;
-  case Compute:
-    return compute_queue;
-  case Transfer:
-    return transfer_queue;
+    case Graphics:
+      return graphics_queue;
+    case Compute:
+      return compute_queue;
+    case Transfer:
+      return transfer_queue;
   }
   return graphics_queue;
 }
 
-auto Context::get_queue_family_index_unsafe(Queue queue) const
-    -> std::uint32_t {
+auto
+Context::get_queue_family_index_unsafe(Queue queue) const -> std::uint32_t
+{
   switch (queue) {
     using enum Queue;
-  case Graphics:
-    return graphics_queue_family;
-  case Compute:
-    return compute_queue_family;
-  case Transfer:
-    return transfer_queue_family;
+    case Graphics:
+      return graphics_queue_family;
+    case Compute:
+      return compute_queue_family;
+    case Transfer:
+      return transfer_queue_family;
   }
   return graphics_queue_family;
 }
 
-void Context::update_resource_bindings() {
+void
+Context::update_resource_bindings()
+{
   base::update_resource_bindings();
 
-  if (const auto &should_update = needs_update(); should_update) [[likely]] {
+  if (const auto& should_update = needs_update(); should_update) [[likely]] {
     return;
   }
 
@@ -403,10 +431,10 @@ void Context::update_resource_bindings() {
   auto current_textures = 1U;
   auto current_samplers = 1U;
 
-  constexpr auto grow_pool = [](const auto &pool, auto out_max) {
+  constexpr auto grow_pool = [](const auto& pool, auto out_max) {
     while (pool.size() > out_max) {
       out_max =
-          static_cast<std::uint32_t>(static_cast<float>(out_max) * grow_factor);
+        static_cast<std::uint32_t>(static_cast<float>(out_max) * grow_factor);
     }
     return out_max;
   };
@@ -431,18 +459,18 @@ void Context::update_resource_bindings() {
   storage_images.reserve(texture_pool.size());
 
   // Need a white texture for VkImageView dummy-ing
-  const auto *realised_image = texture_pool.get(dummy_texture).value();
-  const auto &dummy_image_view = realised_image->get_image_view();
+  const auto* realised_image = texture_pool.get(dummy_texture).value();
+  const auto& dummy_image_view = realised_image->get_image_view();
 
-  for (const auto &object : texture_pool) {
-    const auto &view = object.get_image_view();
-    const auto &storage_view = object.get_storage_image_view()
-                                   ? object.get_storage_image_view()
-                                   : object.get_image_view();
+  for (const auto& object : texture_pool) {
+    const auto& view = object.get_image_view();
+    const auto& storage_view = object.get_storage_image_view()
+                                 ? object.get_storage_image_view()
+                                 : object.get_image_view();
 
     const auto is_available =
-        VK_SAMPLE_COUNT_1_BIT ==
-        (object.get_sample_count() & VK_SAMPLE_COUNT_1_BIT);
+      VK_SAMPLE_COUNT_1_BIT ==
+      (object.get_sample_count() & VK_SAMPLE_COUNT_1_BIT);
     const auto is_sampled = object.is_sampled() && is_available;
     const auto is_storage = object.is_storage() && is_available;
 
@@ -460,55 +488,56 @@ void Context::update_resource_bindings() {
 
   auto realised_sampler = *sampler_pool.get(dummy_sampler).value();
 
-  for (const auto &object : sampler_pool) {
+  for (const auto& object : sampler_pool) {
     sampler_infos.emplace_back(object ? object : realised_sampler,
-                               VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED);
+                               VK_NULL_HANDLE,
+                               VK_IMAGE_LAYOUT_UNDEFINED);
   }
 
   std::array<VkWriteDescriptorSet, 3> writes{};
   auto write_count = 0U;
   if (!sampled_images.empty()) {
     writes[0] = VkWriteDescriptorSet{
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .pNext = nullptr,
-        .dstSet = descriptor_set,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = static_cast<std::uint32_t>(sampled_images.size()),
-        .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-        .pImageInfo = sampled_images.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
+      .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+      .pNext = nullptr,
+      .dstSet = descriptor_set,
+      .dstBinding = 0,
+      .dstArrayElement = 0,
+      .descriptorCount = static_cast<std::uint32_t>(sampled_images.size()),
+      .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+      .pImageInfo = sampled_images.data(),
+      .pBufferInfo = nullptr,
+      .pTexelBufferView = nullptr,
     };
     write_count++;
   }
   if (!sampler_infos.empty()) {
     writes[1] = VkWriteDescriptorSet{
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .pNext = nullptr,
-        .dstSet = descriptor_set,
-        .dstBinding = 1,
-        .dstArrayElement = 0,
-        .descriptorCount = static_cast<std::uint32_t>(sampler_infos.size()),
-        .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
-        .pImageInfo = sampler_infos.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
+      .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+      .pNext = nullptr,
+      .dstSet = descriptor_set,
+      .dstBinding = 1,
+      .dstArrayElement = 0,
+      .descriptorCount = static_cast<std::uint32_t>(sampler_infos.size()),
+      .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+      .pImageInfo = sampler_infos.data(),
+      .pBufferInfo = nullptr,
+      .pTexelBufferView = nullptr,
     };
     write_count++;
   }
   if (!storage_images.empty()) {
     writes[2] = VkWriteDescriptorSet{
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .pNext = nullptr,
-        .dstSet = descriptor_set,
-        .dstBinding = 2,
-        .dstArrayElement = 0,
-        .descriptorCount = static_cast<std::uint32_t>(storage_images.size()),
-        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-        .pImageInfo = storage_images.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
+      .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+      .pNext = nullptr,
+      .dstSet = descriptor_set,
+      .dstBinding = 2,
+      .dstArrayElement = 0,
+      .descriptorCount = static_cast<std::uint32_t>(storage_images.size()),
+      .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+      .pImageInfo = storage_images.data(),
+      .pBufferInfo = nullptr,
+      .pTexelBufferView = nullptr,
     };
     write_count++;
   }
@@ -516,42 +545,45 @@ void Context::update_resource_bindings() {
   if (write_count != 0) {
     vkQueueWaitIdle(get_queue_unsafe(Queue::Graphics));
     vkQueueWaitIdle(get_queue_unsafe(Queue::Compute));
-    vkUpdateDescriptorSets(vkb_device.device, write_count, writes.data(), 0,
-                           nullptr);
+    vkUpdateDescriptorSets(
+      vkb_device.device, write_count, writes.data(), 0, nullptr);
   }
 
   needs_update() = false;
 }
 
-auto Context::get_dsl_binding(const std::uint32_t index,
-                              const VkDescriptorType descriptor_type,
-                              const uint32_t max_count)
-    -> VkDescriptorSetLayoutBinding {
+auto
+Context::get_dsl_binding(const std::uint32_t index,
+                         const VkDescriptorType descriptor_type,
+                         const uint32_t max_count)
+  -> VkDescriptorSetLayoutBinding
+{
   const auto binding = VkDescriptorSetLayoutBinding{
-      .binding = index,
-      .descriptorType = descriptor_type,
-      .descriptorCount = max_count,
-      .stageFlags = all_stages_flags,
-      .pImmutableSamplers = nullptr,
+    .binding = index,
+    .descriptorType = descriptor_type,
+    .descriptorCount = max_count,
+    .stageFlags = all_stages_flags,
+    .pImmutableSamplers = nullptr,
   };
 
   return binding;
 }
 
-auto Context::grow_descriptor_pool(std::uint32_t new_max_textures,
-                                   std::uint32_t new_max_samplers)
-    -> Expected<void, ContextError> {
+auto
+Context::grow_descriptor_pool(std::uint32_t new_max_textures,
+                              std::uint32_t new_max_samplers)
+  -> Expected<void, ContextError>
+{
   static auto vkGetPhysicalDeviceProperties2 =
-      reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(
-          vkGetInstanceProcAddr(vkb_instance.instance,
-                                "vkGetPhysicalDeviceProperties2"));
+    reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(vkGetInstanceProcAddr(
+      vkb_instance.instance, "vkGetPhysicalDeviceProperties2"));
 
   current_max_textures = new_max_textures;
   current_max_samplers = new_max_samplers;
 
   if (vkGetPhysicalDeviceProperties2 == nullptr) {
     return unexpected<ContextError>(
-        ContextError{"Failed to get vkGetPhysicalDeviceProperties2"});
+      ContextError{ "Failed to get vkGetPhysicalDeviceProperties2" });
   }
 
   VkPhysicalDeviceVulkan12Properties props12{};
@@ -565,14 +597,14 @@ auto Context::grow_descriptor_pool(std::uint32_t new_max_textures,
 
 #define VERIFY(condition, message)                                             \
   if (!(condition)) {                                                          \
-    return unexpected<ContextError>(ContextError{message});                    \
+    return unexpected<ContextError>(ContextError{ message });                  \
   }
 
   VERIFY(current_max_samplers <=
-             props12.maxDescriptorSetUpdateAfterBindSamplers,
+           props12.maxDescriptorSetUpdateAfterBindSamplers,
          "Maximum number of samplers exceeds device limit");
   VERIFY(current_max_textures <=
-             props12.maxDescriptorSetUpdateAfterBindSampledImages,
+           props12.maxDescriptorSetUpdateAfterBindSampledImages,
          "Maximum number of sampled images exceeds device limit");
 
   if (const auto could = update_descriptor_sets(); !could.has_value()) {
@@ -582,223 +614,248 @@ auto Context::grow_descriptor_pool(std::uint32_t new_max_textures,
   return {};
 }
 
-auto Context::update_descriptor_sets() -> Expected<void, ContextError> {
+auto
+Context::update_descriptor_sets() -> Expected<void, ContextError>
+{
   if (descriptor_pool != VK_NULL_HANDLE) {
     pre_frame_task(
-        [pool = descriptor_pool](auto dev, auto *allocation_callbacks) {
-          vkDestroyDescriptorPool(dev, pool, allocation_callbacks);
-        });
+      [pool = descriptor_pool](auto dev, auto* allocation_callbacks) {
+        vkDestroyDescriptorPool(dev, pool, allocation_callbacks);
+      });
   }
   if (descriptor_set_layout != VK_NULL_HANDLE) {
     pre_frame_task(
-        [layout = descriptor_set_layout](auto dev, auto *allocation_callbacks) {
-          vkDestroyDescriptorSetLayout(dev, layout, allocation_callbacks);
-        });
+      [layout = descriptor_set_layout](auto dev, auto* allocation_callbacks) {
+        vkDestroyDescriptorSetLayout(dev, layout, allocation_callbacks);
+      });
   }
 
   const auto bindings = std::array{
-      get_dsl_binding(0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-                      current_max_textures),
-      get_dsl_binding(1, VK_DESCRIPTOR_TYPE_SAMPLER, current_max_samplers),
-      get_dsl_binding(2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-                      current_max_textures),
-      get_dsl_binding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                      current_max_textures),
+    get_dsl_binding(0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, current_max_textures),
+    get_dsl_binding(1, VK_DESCRIPTOR_TYPE_SAMPLER, current_max_samplers),
+    get_dsl_binding(2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, current_max_textures),
+    get_dsl_binding(
+      3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, current_max_textures),
   };
 
   constexpr VkDescriptorSetLayoutCreateFlags flags =
-      VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
-      VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
-      VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT |
-      VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+    VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
+    VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+    VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT |
+    VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
 
   constexpr std::array<VkDescriptorSetLayoutCreateFlags, 4> binding_flags =
-      std::array{flags, flags, flags, flags};
+    std::array{ flags, flags, flags, flags };
 
-  const VkDescriptorSetLayoutBindingFlagsCreateInfo binding_flags_create_info =
-      {
-          .sType =
-              VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-          .pNext = nullptr,
-          .bindingCount = static_cast<std::uint32_t>(binding_flags.size()),
-          .pBindingFlags = binding_flags.data(),
-      };
+  const VkDescriptorSetLayoutBindingFlagsCreateInfo
+    binding_flags_create_info = {
+      .sType =
+        VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+      .pNext = nullptr,
+      .bindingCount = static_cast<std::uint32_t>(binding_flags.size()),
+      .pBindingFlags = binding_flags.data(),
+    };
 
   const VkDescriptorSetLayoutCreateInfo dsl_create_info = {
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-      .pNext = &binding_flags_create_info,
-      .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
-      .bindingCount = static_cast<std::uint32_t>(bindings.size()),
-      .pBindings = bindings.data(),
+    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+    .pNext = &binding_flags_create_info,
+    .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
+    .bindingCount = static_cast<std::uint32_t>(bindings.size()),
+    .pBindings = bindings.data(),
   };
 
-  if (vkCreateDescriptorSetLayout(vkb_device.device, &dsl_create_info, nullptr,
-                                  &descriptor_set_layout) != VK_SUCCESS) {
+  if (vkCreateDescriptorSetLayout(
+        vkb_device.device, &dsl_create_info, nullptr, &descriptor_set_layout) !=
+      VK_SUCCESS) {
     return unexpected<ContextError>(
-        ContextError{"Failed to create descriptor set layout"});
+      ContextError{ "Failed to create descriptor set layout" });
   };
 
   const std::array pool_sizes = {
-      VkDescriptorPoolSize{
-          VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-          current_max_textures,
-      },
-      VkDescriptorPoolSize{
-          VK_DESCRIPTOR_TYPE_SAMPLER,
-          current_max_samplers,
-      },
-      VkDescriptorPoolSize{
-          VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-          current_max_textures,
-      },
-      VkDescriptorPoolSize{
-          VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-          current_max_textures,
-      },
+    VkDescriptorPoolSize{
+      VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+      current_max_textures,
+    },
+    VkDescriptorPoolSize{
+      VK_DESCRIPTOR_TYPE_SAMPLER,
+      current_max_samplers,
+    },
+    VkDescriptorPoolSize{
+      VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+      current_max_textures,
+    },
+    VkDescriptorPoolSize{
+      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+      current_max_textures,
+    },
   };
 
   const VkDescriptorPoolCreateInfo pool_create_info = {
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-      .pNext = nullptr,
-      .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT |
-               VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-      .maxSets = 1,
-      .poolSizeCount = static_cast<std::uint32_t>(pool_sizes.size()),
-      .pPoolSizes = pool_sizes.data(),
+    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT |
+             VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+    .maxSets = 1,
+    .poolSizeCount = static_cast<std::uint32_t>(pool_sizes.size()),
+    .pPoolSizes = pool_sizes.data(),
   };
-  if (vkCreateDescriptorPool(vkb_device.device, &pool_create_info, nullptr,
-                             &descriptor_pool) != VK_SUCCESS) {
+  if (vkCreateDescriptorPool(
+        vkb_device.device, &pool_create_info, nullptr, &descriptor_pool) !=
+      VK_SUCCESS) {
     return unexpected<ContextError>(
-        ContextError{"Failed to create descriptor pool"});
+      ContextError{ "Failed to create descriptor pool" });
   }
 
   // Allocate the descriptor set
   VkDescriptorSetAllocateInfo alloc_info = {
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-      .pNext = nullptr,
-      .descriptorPool = descriptor_pool,
-      .descriptorSetCount = 1,
-      .pSetLayouts = &descriptor_set_layout};
-  if (vkAllocateDescriptorSets(vkb_device.device, &alloc_info,
-                               &descriptor_set) != VK_SUCCESS) {
+    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+    .pNext = nullptr,
+    .descriptorPool = descriptor_pool,
+    .descriptorSetCount = 1,
+    .pSetLayouts = &descriptor_set_layout
+  };
+  if (vkAllocateDescriptorSets(
+        vkb_device.device, &alloc_info, &descriptor_set) != VK_SUCCESS) {
     return unexpected<ContextError>(
-        ContextError{"Failed to allocate descriptor set"});
+      ContextError{ "Failed to allocate descriptor set" });
   }
 
   return {};
 }
 
-auto Context::create_placeholder_resources() -> void {
+auto
+Context::create_placeholder_resources() -> void
+{
   const std::array<const std::uint8_t, 4> dummy_white_texture = {
-      255,
-      255,
-      255,
-      255,
+    255,
+    255,
+    255,
+    255,
   };
-  auto image =
-      VkTexture::create(*this, VkTextureDescription{
-                                   .data = std::span(dummy_white_texture),
-                                   .format = VK_FORMAT_R8G8B8A8_UNORM,
-                                   .extent = {1, 1, 1},
-                                   .usage_flags = TextureUsageFlags::Sampled |
-                                                  TextureUsageFlags::Storage,
-                                   .debug_name = "Dummy White Texture (1x1)",
-                               });
+  auto image = VkTexture::create(
+    *this,
+    VkTextureDescription{
+      .data = std::span(dummy_white_texture),
+      .format = VK_FORMAT_R8G8B8A8_UNORM,
+      .extent = { 1, 1, 1 },
+      .usage_flags = TextureUsageFlags::Sampled | TextureUsageFlags::Storage,
+      .debug_name = "Dummy White Texture (1x1)",
+    });
   assert(image.valid());
   dummy_texture = image.release();
 
   dummy_sampler = VkTextureSampler::create(
-                      *this,
-                      VkSamplerCreateInfo{
-                          .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-                          .pNext = nullptr,
-                          .flags = {},
-                          .magFilter = VK_FILTER_LINEAR,
-                          .minFilter = VK_FILTER_LINEAR,
-                          .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-                          .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                          .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                          .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                          .mipLodBias = 0.0F,
-                          .anisotropyEnable = VK_FALSE,
-                          .maxAnisotropy = 0.0F,
-                          .compareEnable = VK_FALSE,
-                          .compareOp = VK_COMPARE_OP_ALWAYS,
-                          .minLod = 0.0F,
-                          .maxLod = 1.0F,
-                          .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK,
-                          .unnormalizedCoordinates = VK_FALSE,
-                      })
-                      .release();
+                    *this,
+                    VkSamplerCreateInfo{
+                      .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                      .pNext = nullptr,
+                      .flags = {},
+                      .magFilter = VK_FILTER_LINEAR,
+                      .minFilter = VK_FILTER_LINEAR,
+                      .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+                      .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                      .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                      .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                      .mipLodBias = 0.0F,
+                      .anisotropyEnable = VK_FALSE,
+                      .maxAnisotropy = 0.0F,
+                      .compareEnable = VK_FALSE,
+                      .compareOp = VK_COMPARE_OP_ALWAYS,
+                      .minLod = 0.0F,
+                      .maxLod = 1.0F,
+                      .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK,
+                      .unnormalizedCoordinates = VK_FALSE,
+                    })
+                    .release();
 }
 
-auto Context::get_allocator_implementation() -> IAllocator & {
+auto
+Context::get_allocator_implementation() -> IAllocator&
+{
   assert(allocator_impl != nullptr &&
          "Allocator implementation must be set before use");
   return *allocator_impl;
 }
 
-auto Context::acquire_command_buffer() -> ICommandBuffer & {
+auto Context::resize_swapchain(std::uint32_t width, std::uint32_t height) -> void
+{
+  if (swapchain) {
+    swapchain->resize(width, height);
+  }
+}
+
+auto
+Context::acquire_command_buffer() -> ICommandBuffer&
+{
   command_buffer = CommandBuffer(*this);
   return command_buffer;
 }
 
-auto Context::submit(ICommandBuffer &commandBuffer, TextureHandle present)
-    -> SubmitHandle {
-  CommandBuffer &vk_buffer = static_cast<CommandBuffer &>(commandBuffer);
+auto
+Context::submit(ICommandBuffer& commandBuffer, TextureHandle present)
+  -> Expected<SubmitHandle, std::string>
+{
+  CommandBuffer& vk_buffer = static_cast<CommandBuffer&>(commandBuffer);
 
 #if defined(LVK_WITH_TRACY_GPU)
   TracyVkCollect(pimpl_->tracyVkCtx_, vk_buffer.get_command_buffer());
 #endif // LVK_WITH_TRACY_GPU
 
   if (present) {
-    const auto &tex = *texture_pool.get(present);
+    const auto& tex = *texture_pool.get(present);
 
     assert(tex->is_swapchain_image());
 
-    VkPipelineStageFlags2 src_stage =
-        VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+    VkPipelineStageFlags2 src_stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
     VkAccessFlags2 src_access = VK_ACCESS_2_NONE;
-    VkPipelineStageFlags2 dst_stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    VkPipelineStageFlags2 dst_stage =
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT |
+      VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
     VkAccessFlags2 dst_access = VK_ACCESS_2_NONE | VK_ACCESS_2_SHADER_WRITE_BIT;
 
-    Transition::image(vk_buffer.get_command_buffer(), tex->get_image(),
+    Transition::image(vk_buffer.get_command_buffer(),
+                      tex->get_image(),
                       VK_IMAGE_LAYOUT_UNDEFINED,
                       VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                      VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0,
-                                              VK_REMAINING_MIP_LEVELS, 0,
-                                              VK_REMAINING_ARRAY_LAYERS},
-                      src_stage, src_access, dst_stage, dst_access);
+                      VkImageSubresourceRange{
+                        VK_IMAGE_ASPECT_COLOR_BIT,
+                        0,
+                        VK_REMAINING_MIP_LEVELS,
+                        0,
+                        VK_REMAINING_ARRAY_LAYERS,
+                      },
+                      src_stage,
+                      src_access,
+                      dst_stage,
+                      dst_access);
   }
 
   const auto has_swapchain = swapchain != nullptr;
   const bool should_present = has_swapchain && present;
 
   if (should_present) {
-    // if we a presenting a swapchain image, signal our timeline semaphore
     const std::uint64_t signal_value =
-        swapchain->current_frame_index() + swapchain->swapchain_image_count();
-    // we wait for this value next time we want to acquire this swapchain image
+      swapchain->current_frame_index() + swapchain->swapchain_image_count();
     swapchain
-        ->timeline_wait_values[swapchain->swapchain_current_image_index()] =
-        signal_value;
+      ->timeline_wait_values[swapchain->swapchain_current_image_index()] =
+      signal_value;
     immediate_commands->signal_semaphore(timeline_semaphore, signal_value);
   }
 
   command_buffer.last_submit_handle =
-      immediate_commands->submit(*command_buffer.wrapper);
+    immediate_commands->submit(*command_buffer.wrapper);
 
   if (should_present) {
     auto could =
-        swapchain->present(immediate_commands->acquire_last_submit_semaphore());
+      swapchain->present(immediate_commands->acquire_last_submit_semaphore());
     if (!could) {
-      // Handle presentation failure
+      return unexpected<std::string>("Failed to present swapchain");
     }
   }
 
   [&] {
     while (!pre_frame_callbacks.empty()) {
-      auto &front = pre_frame_callbacks.front();
+      auto& front = pre_frame_callbacks.front();
       front(vkb_device.device, nullptr);
       pre_frame_callbacks.pop_front();
     }
@@ -811,14 +868,19 @@ auto Context::submit(ICommandBuffer &commandBuffer, TextureHandle present)
   return handle;
 }
 
-auto Context::get_current_swapchain_texture() -> TextureHandle {
+auto
+Context::get_current_swapchain_texture() -> TextureHandle
+{
   return swapchain->current_texture();
 }
 
 #pragma region Destroyers
 
-auto Context::destroy(TextureHandle handle) -> void {
-  SCOPE_EXIT {
+auto
+Context::destroy(TextureHandle handle) -> void
+{
+  SCOPE_EXIT
+  {
     if (const auto exp = texture_pool.destroy(handle); !exp.has_value()) {
       std::cerr << "Failed to destroy texture: "
                 << std::to_underlying(exp.error()) << std::endl;
@@ -833,7 +895,7 @@ auto Context::destroy(TextureHandle handle) -> void {
     return;
   }
 
-  auto *texture = maybe_texture.value();
+  auto* texture = maybe_texture.value();
   if (texture == nullptr) {
     return;
   }
@@ -841,9 +903,9 @@ auto Context::destroy(TextureHandle handle) -> void {
   // Lets destroy the allocation, the image, the view, the storage view, the
   // layer/mip views.
   pre_frame_task([&allocator = get_allocator_implementation(),
-                  img = texture](auto device, auto *allocation_callbacks) {
+                  img = texture](auto device, auto* allocation_callbacks) {
     for (const auto view = img->get_mip_layers_image_views();
-         const auto &v : view) {
+         const auto& v : view) {
       if (VK_NULL_HANDLE == v) {
         continue;
       }
@@ -860,26 +922,36 @@ auto Context::destroy(TextureHandle handle) -> void {
   }
 
   pre_frame_task([&alloc = *allocator_impl, tex = texture->get_image()](
-                     auto, auto) { alloc.deallocate_image(tex); });
+                   auto, auto) { alloc.deallocate_image(tex); });
 }
 
-auto Context::destroy(BufferHandle) -> void {
+auto
+Context::destroy(BufferHandle) -> void
+{
   TODO("Implement buffer destruction");
 }
 
-auto Context::destroy(QueryPoolHandle) -> void {
+auto
+Context::destroy(QueryPoolHandle) -> void
+{
   TODO("Implement query pool destruction");
 }
 
-auto Context::destroy(ComputePipelineHandle) -> void {
+auto
+Context::destroy(ComputePipelineHandle) -> void
+{
   TODO("Implement compute pipeline destruction");
 }
 
-auto Context::destroy(GraphicsPipelineHandle) -> void {
+auto
+Context::destroy(GraphicsPipelineHandle) -> void
+{
   TODO("Implement graphics pipeline destruction");
 }
 
-auto Context::destroy(SamplerHandle handle) -> void {
+auto
+Context::destroy(SamplerHandle handle) -> void
+{
   if (!handle.valid()) {
     return;
   }
@@ -894,7 +966,7 @@ auto Context::destroy(SamplerHandle handle) -> void {
     return;
   }
 
-  pre_frame_task([ptr = sampler](auto device, auto *allocation_callbacks) {
+  pre_frame_task([ptr = sampler](auto device, auto* allocation_callbacks) {
     vkDestroySampler(device, ptr, allocation_callbacks);
   });
 
@@ -905,7 +977,9 @@ auto Context::destroy(SamplerHandle handle) -> void {
   }
 }
 
-auto Context::destroy(ShaderModuleHandle) -> void {
+auto
+Context::destroy(ShaderModuleHandle) -> void
+{
   TODO("Implement shader module destruction");
 }
 

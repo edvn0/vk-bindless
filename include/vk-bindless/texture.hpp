@@ -89,6 +89,8 @@ struct VkTextureDescription {
   bool is_owning{true};
   bool is_swapchain{false};
 
+  std::optional<VkImage> externally_created_image;
+
   std::string_view debug_name;
 };
 
@@ -130,6 +132,8 @@ private:
   VkSampleCountFlagBits sample_count{VK_SAMPLE_COUNT_1_BIT};
   bool image_owns_itself{true};
   bool is_swapchain{false};
+  std::uint32_t mip_levels{1};
+  std::uint32_t array_layers{0};
 
   std::vector<VkImageView> mip_layer_views;
 
@@ -138,6 +142,8 @@ private:
 
   bool sampled{false};
   bool storage{false};
+
+  auto create_internal_image(IContext&,const VkTextureDescription&) -> void;
 };
 
 class VkTextureSampler {

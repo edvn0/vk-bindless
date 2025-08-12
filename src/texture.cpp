@@ -19,15 +19,8 @@ constexpr auto max(T0 &&first, Ts &&...rest) {
   return max_value;
 }
 
-VkTexture::VkTexture(IContext &ctx, const VkTextureDescription &description)
-    : sample_count{description.sample_count},
-      image_owns_itself{description.is_owning},
-      is_swapchain{description.is_swapchain},
-      sampled{static_cast<bool>(description.usage_flags &
-                                TextureUsageFlags::Sampled)},
-      storage{static_cast<bool>(description.usage_flags &
-                                TextureUsageFlags::Storage)} {
-  auto &allocator = ctx.get_allocator_implementation();
+auto VkTexture::create_internal_image(IContext& ctx,const VkTextureDescription& description) -> void {
+ auto &allocator = ctx.get_allocator_implementation();
 
   VkImageCreateInfo image_info{};
   image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -51,6 +44,7 @@ VkTexture::VkTexture(IContext &ctx, const VkTextureDescription &description)
   assert(image_info.mipLevels > 0 && image_info.arrayLayers > 0 &&
          "Image must have at least one mip level and one layer");
 
+
   if (description.debug_name.empty()) {
     set_name_for_object(
         ctx.get_device(), VK_OBJECT_TYPE_IMAGE, image, std::format("{}-[{}x{}]", description.debug_name, description.extent.width, description.extent.height));
@@ -73,8 +67,23 @@ VkTexture::VkTexture(IContext &ctx, const VkTextureDescription &description)
   auto &&[img, alloc] = std::move(could_allocate.value());
   image = img;
   image_allocation = alloc;
+  mip_levels = image_info.mipLevels;
+  array_layers = image_info.arrayLayers;
+}
 
-  // We don't want to create swapchain views here.
+VkTexture::VkTexture(IContext &ctx, const VkTextureDescription &description)
+    : sample_count{description.sample_count},
+      image_owns_itself{description.is_owning},
+      is_swapchain{description.is_swapchain},
+      sampled{static_cast<bool>(description.usage_flags &
+                                TextureUsageFlags::Sampled)},
+      storage{static_cast<bool>(description.usage_flags &
+                                TextureUsageFlags::Storage)} {
+if (!description.externally_created_image) {
+  create_internal_image(ctx, description);
+} else {
+  image = *description.externally_created_image;
+}
   if (is_swapchain)
     return;
 
@@ -90,9 +99,9 @@ VkTexture::VkTexture(IContext &ctx, const VkTextureDescription &description)
   view_info.format = description.format;
   view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
   view_info.subresourceRange.baseMipLevel = 0;
-  view_info.subresourceRange.levelCount = image_info.mipLevels;
+  view_info.subresourceRange.levelCount = mip_levels;
   view_info.subresourceRange.baseArrayLayer = 0;
-  view_info.subresourceRange.layerCount = image_info.arrayLayers;
+  view_info.subresourceRange.layerCount = array_layers;
   view_info.components.r = VK_COMPONENT_SWIZZLE_R;
   view_info.components.g = VK_COMPONENT_SWIZZLE_G;
   view_info.components.b = VK_COMPONENT_SWIZZLE_B;
@@ -101,14 +110,14 @@ VkTexture::VkTexture(IContext &ctx, const VkTextureDescription &description)
   VK_VERIFY(
       vkCreateImageView(ctx.get_device(), &view_info, nullptr, &image_view));
 
-  mip_layer_views.resize(image_info.mipLevels * image_info.arrayLayers);
+  mip_layer_views.resize(mip_levels * array_layers);
 
   if (mip_layer_views.size() < 2) {
     mip_layer_views.at(0) = image_view;
   } else {
-    for (std::uint32_t mip = 0; mip < image_info.mipLevels; ++mip) {
-      for (std::uint32_t layer = 0; layer < image_info.arrayLayers; ++layer) {
-        const auto index = mip * image_info.arrayLayers + layer;
+    for (std::uint32_t mip = 0; mip < mip_levels; ++mip) {
+      for (std::uint32_t layer = 0; layer < array_layers; ++layer) {
+        const auto index = mip * array_layers + layer;
         view_info.subresourceRange.baseMipLevel = mip;
         view_info.subresourceRange.baseArrayLayer = layer;
         view_info.subresourceRange.layerCount = 1;

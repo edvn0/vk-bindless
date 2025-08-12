@@ -3,8 +3,9 @@
 #include "vk-bindless/graphics_context.hpp"
 #include "vk-bindless/texture.hpp"
 #include "vk-bindless/vulkan_context.hpp"
+
 #include <bit>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.h>
 
 namespace VkBindless {
 
@@ -13,7 +14,7 @@ auto choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &formats,
                                 ColorSpace requestedColorSpace,
                                 bool hasSwapchainColorspaceExt) {
 
-  auto isNativeSwapChainBGR =
+  auto is_native_swapchain_bgr =
       [](const std::vector<VkSurfaceFormatKHR> &formats) -> bool {
     for (const VkSurfaceFormatKHR &fmt : formats) {
       // The preferred format should be the one which is closer to the beginning
@@ -62,7 +63,7 @@ auto choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR> &formats,
   };
 
   const VkSurfaceFormatKHR preferred = colorSpaceToVkSurfaceFormat(
-      requestedColorSpace, isNativeSwapChainBGR(formats),
+      requestedColorSpace, is_native_swapchain_bgr(formats),
       hasSwapchainColorspaceExt);
 
   for (const VkSurfaceFormatKHR &fmt : formats) {
@@ -300,6 +301,7 @@ vkSetHdrMetadataEXT(device_, 1, &swapchain_, &metadata);
             .initial_layout = VK_IMAGE_LAYOUT_UNDEFINED,
             .is_owning = true,
             .is_swapchain = true,
+            .externally_created_image = swapchain_images[i],
             .debug_name = "Swapchain Image " + std::to_string(i),
         },
     };
@@ -356,8 +358,12 @@ auto Swapchain::set_next_image_needed(bool val) -> void {
   need_next_image = val;
 }
 
+auto Swapchain::resize(std::uint32_t , std::uint32_t ) -> void {
+  // TODO: Implement swapchain resizing
+}
+
 auto Swapchain::present(VkSemaphore wait_semaphore)
-    -> Expected<void, std::string> {
+    -> Expected<void, SwapchainPresentFailure> {
 
   const VkSwapchainPresentFenceInfoEXT fence_info = {
       .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_EXT,
@@ -401,9 +407,13 @@ auto Swapchain::present(VkSemaphore wait_semaphore)
     }
   }
   VkResult r = vkQueuePresentKHR(graphics_queue_handle, &pi);
-  if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR &&
-      r != VK_ERROR_OUT_OF_DATE_KHR) {
-    assert((bool)r);
+  if (r == VK_SUBOPTIMAL_KHR || r == VK_ERROR_OUT_OF_DATE_KHR) {
+    return unexpected<SwapchainPresentFailure>(
+        r == VK_ERROR_OUT_OF_DATE_KHR ? SwapchainPresentFailure::OutOfDate : SwapchainPresentFailure::Suboptimal);
+  }
+
+  if (r != VK_SUCCESS) {
+    assert(false && "Failed to present swapchain image");
   }
   set_next_image_needed(true);
   frame_index++;

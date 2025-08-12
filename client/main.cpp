@@ -119,17 +119,23 @@ auto main() -> std::int32_t {
     key_callback(win, key, scancode, action, mods, state);
   });
 
-  std::int32_t width = 0, height = 0;
+  std::int32_t new_width = 0, new_height = 0;
 
   while (!glfwWindowShouldClose(window.get())) {
     glfwPollEvents();
-    glfwGetFramebufferSize(window.get(), &width, &height);
-    if (!width || !height)
+    glfwGetFramebufferSize(window.get(), &new_width, &new_height);
+    if (!new_width || !new_height)
       continue;
 
+    auto& swapchain = vulkan_context->get_swapchain();
+    if (static_cast<std::uint32_t>(new_width) != swapchain.width() || static_cast<std::uint32_t>(new_height) != swapchain.height()) {
+        swapchain.resize(new_width, new_height);
+        continue;
+    }
+
     auto &buf = vulkan_context->acquire_command_buffer();
-    vulkan_context->submit(buf,
-                           vulkan_context->get_current_swapchain_texture());
+    auto swapchain_texture = vulkan_context->get_current_swapchain_texture();
+    vulkan_context->submit(buf, swapchain_texture);
   }
 
   return 0;

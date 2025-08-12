@@ -59,6 +59,12 @@ public:
   [[nodiscard]] auto needs_update() -> bool & override {
     return resource_bindings_updated;
   }
+
+  auto get_swapchain() -> Swapchain & override {
+    return *swapchain;
+  }
+  auto resize_swapchain(std::uint32_t, std::uint32_t) -> void override;
+
   auto update_resource_bindings() -> void override;
   auto pre_frame_task(PreFrameCallback &&callback) -> void override {
     pre_frame_callbacks.push_back(std::move(callback));
@@ -74,7 +80,7 @@ public:
 
   auto acquire_command_buffer() -> ICommandBuffer & override;
   auto submit(ICommandBuffer &cmd_buffer, TextureHandle present)
-      -> SubmitHandle override;
+      -> Expected<SubmitHandle, std::string> override;
   auto get_current_swapchain_texture() -> TextureHandle override;
 
   auto get_immediate_commands() -> auto & { return *immediate_commands; }
