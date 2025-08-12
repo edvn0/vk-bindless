@@ -231,8 +231,8 @@ vkSetHdrMetadataEXT(device_, 1, &swapchain_, &metadata);
   VK_VERIFY(vkGetSwapchainImagesKHR(context_ref.get_device(), swapchain_khr,
                                     &image_count, swapchain_images.data()));
 
-  static constexpr auto create_semaphore =
-      [](VkDevice device, std::string_view n) -> VkSemaphore {
+  static constexpr auto create_semaphore = [](VkDevice device,
+                                              std::string_view) -> VkSemaphore {
     auto semaphore_info =
         VkSemaphoreCreateInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
     VkSemaphore semaphore;

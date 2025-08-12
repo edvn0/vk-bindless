@@ -117,10 +117,6 @@ auto main() -> std::int32_t {
     key_callback(win, key, scancode, action, mods, state);
   });
 
-  std::size_t frame_count = 0;
-  double last_time = glfwGetTime();
-  double fps_time_accumulator = 0.0;
-
   std::int32_t width = 0, height = 0;
 
   while (!glfwWindowShouldClose(window.get())) {

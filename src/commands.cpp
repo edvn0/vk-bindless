@@ -6,10 +6,12 @@
 
 namespace VkBindless {
 
-static constexpr auto create_semaphore(VkDevice device, std::string_view name) {
+static auto create_semaphore(VkDevice device, std::string_view name) {
   VkSemaphore semaphore;
   VkSemaphoreCreateInfo create_info{
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
   };
   if (vkCreateSemaphore(device, &create_info, nullptr, &semaphore) !=
       VK_SUCCESS) {
@@ -21,10 +23,11 @@ static constexpr auto create_semaphore(VkDevice device, std::string_view name) {
   return semaphore;
 }
 
-static constexpr auto create_fence(VkDevice device, std::string_view name) {
+static auto create_fence(VkDevice device, std::string_view name) {
   VkFence fence;
   VkFenceCreateInfo create_info{
       .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+      .pNext = nullptr,
       .flags = VK_FENCE_CREATE_SIGNALED_BIT,
   };
   if (vkCreateFence(device, &create_info, nullptr, &fence) != VK_SUCCESS) {
@@ -44,6 +47,7 @@ ImmediateCommands::ImmediateCommands(VkDevice device,
   vkGetDeviceQueue(device, queue_family_index, 0, &queue);
   const VkCommandPoolCreateInfo pool_info{
       .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+      .pNext = nullptr,
       .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT |
                VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
       .queueFamilyIndex = queue_family_index,
@@ -52,6 +56,7 @@ ImmediateCommands::ImmediateCommands(VkDevice device,
 
   const VkCommandBufferAllocateInfo ai = {
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+      .pNext = nullptr,
       .commandPool = command_pool,
       .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
       .commandBufferCount = 1,
@@ -97,7 +102,9 @@ auto ImmediateCommands::acquire() -> CommandBufferWrapper & {
 
   const VkCommandBufferBeginInfo begin_info{
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+      .pNext = nullptr,
       .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+      .pInheritanceInfo = nullptr,
   };
   VK_VERIFY(vkBeginCommandBuffer(current->command_buffer, &begin_info));
   next_submit_handle = current->handle;
@@ -143,6 +150,7 @@ auto ImmediateCommands::submit(const CommandBufferWrapper &wrapper)
   std::array<VkSemaphoreSubmitInfo, 1> signal_semaphores{
       VkSemaphoreSubmitInfo{
           .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+          .pNext = nullptr,
           .semaphore = wrapper.semaphore,
           .stageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
       },
@@ -154,10 +162,12 @@ auto ImmediateCommands::submit(const CommandBufferWrapper &wrapper)
 
   const VkCommandBufferSubmitInfo bufferSI = {
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+      .pNext = nullptr,
       .commandBuffer = wrapper.command_buffer,
   };
   const VkSubmitInfo2 si = {
       .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+      .pNext = nullptr,
       .waitSemaphoreInfoCount = wait_semaphore_count,
       .pWaitSemaphoreInfos = wait_semaphores.data(),
       .commandBufferInfoCount = 1u,

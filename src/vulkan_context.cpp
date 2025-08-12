@@ -23,8 +23,8 @@
 
 namespace VkBindless {
 
-static constexpr auto create_timeline_semaphore(VkDevice device,
-                                                std::uint64_t initial_value)
+static auto create_timeline_semaphore(VkDevice device,
+                                      std::uint64_t initial_value)
     -> VkSemaphore {
   const VkSemaphoreTypeCreateInfo semaphoreTypeCreateInfo = {
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
@@ -365,7 +365,6 @@ void Context::update_resource_bindings() {
 
   // Need a white texture for VkImageView dummy-ing
   const auto *realised_image = texture_pool.get(dummy_texture).value();
-  const auto dummy_sampler = sampler_pool.at(0);
   const auto &dummy_image_view = realised_image->get_image_view();
 
   for (const auto &object : texture_pool) {
@@ -392,9 +391,11 @@ void Context::update_resource_bindings() {
   std::vector<VkDescriptorImageInfo> sampler_infos;
   sampler_infos.reserve(sampler_pool.size());
 
+  auto realised_sampler = *sampler_pool.get(dummy_sampler).value();
+
   for (const auto &object : sampler_pool) {
-    sampler_infos.emplace_back(object ? object : dummy_sampler, VK_NULL_HANDLE,
-                               VK_IMAGE_LAYOUT_UNDEFINED);
+    sampler_infos.emplace_back(object ? object : realised_sampler,
+                               VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED);
   }
 
   std::array<VkWriteDescriptorSet, 3> writes{};
@@ -783,15 +784,15 @@ auto Context::destroy(TextureHandle handle) -> void {
                      auto, auto) { alloc.deallocate_image(tex); });
 }
 
-auto Context::destroy(BufferHandle handle) -> void {
+auto Context::destroy(BufferHandle) -> void {
   TODO("Implement buffer destruction");
 }
 
-auto Context::destroy(ComputePipelineHandle handle) -> void {
+auto Context::destroy(ComputePipelineHandle) -> void {
   TODO("Implement compute pipeline destruction");
 }
 
-auto Context::destroy(GraphicsPipelineHandle handle) -> void {
+auto Context::destroy(GraphicsPipelineHandle) -> void {
   TODO("Implement graphics pipeline destruction");
 }
 
@@ -821,7 +822,7 @@ auto Context::destroy(SamplerHandle handle) -> void {
   }
 }
 
-auto Context::destroy(ShaderModuleHandle handle) -> void {
+auto Context::destroy(ShaderModuleHandle) -> void {
   TODO("Implement shader module destruction");
 }
 

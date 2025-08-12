@@ -15,7 +15,7 @@ check_cxx_source_compiles("
 #include <expected>
 int main() {
     std::expected<int, int> v{42};
-    return XXXv.value();
+    return v.value();
 }
 " HAS_STD_EXPECTED)
 
@@ -48,6 +48,23 @@ add_library(VkBindless::VkBindless ALIAS VkBindless)
 # if clang/gcc, -Wnonullability-completeness
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(${PROJECT_NAME} PRIVATE -Wno-nullability-completeness)
+endif()
+
+if (MSVC)
+    target_compile_options(${PROJECT_NAME} PRIVATE /W4 /WX)
+    if (ENABLE_TESTING)
+        target_compile_options(test_vk_bindless PRIVATE /W4 /WX)
+    endif()    
+    get_target_property(VMA_REAL_TARGET GPUOpen::VulkanMemoryAllocator ALIASED_TARGET)
+
+    if (VMA_REAL_TARGET)
+        target_compile_options(${VMA_REAL_TARGET} INTERFACE /wd4100 /wd4324)
+    endif()
+elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    if (ENABLE_TESTING)
+        target_compile_options(test_vk_bindless PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
 endif()
 
 add_subdirectory(client)

@@ -268,7 +268,7 @@ struct Offset3D {
   std::int32_t z = 0;
 };
 
-class ICommandBuffer {
+struct ICommandBuffer {
 public:
   virtual ~ICommandBuffer() = default;
   /*
