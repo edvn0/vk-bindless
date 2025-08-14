@@ -2,10 +2,12 @@
 
 #include "allocator_interface.hpp"
 
+#include <array>
 #include <cstdint>
 #include <span>
 #include <string>
 #include <vulkan/vulkan.h>
+
 
 #include "vk-bindless/forward.hpp"
 #include "vk-bindless/holder.hpp"
@@ -56,6 +58,9 @@
   }
 
 namespace VkBindless {
+
+static constexpr auto max_mip_levels = 15ULL; // A ~33k texture
+static constexpr auto cube_array_layers = 6ULL;
 
 struct TextureError
 {
@@ -138,7 +143,20 @@ public:
   }
   [[nodiscard]] auto owns_self() const -> bool { return image_owns_itself; }
   [[nodiscard]] auto is_swapchain_image() const { return is_swapchain; }
+  [[nodiscard]] auto get_image_aspect_flags() const -> VkImageAspectFlags
+  {
+    return image_aspect_flags;
+  }
+  [[nodiscard]] auto get_extent() const -> VkExtent3D { return extent; }
+  [[nodiscard]] auto get_framebuffer_views() const
+    -> std::span<const VkImageView>
+  {
+    return std::span(cached_framebuffer_views);
+  }
 
+  auto get_or_create_framebuffer_view(IContext&,
+                                      std::uint32_t mip,
+                                      std::uint32_t layer) -> VkImageView;
   auto create_image_view(VkDevice, const VkImageViewCreateInfo&) -> void;
 
 private:
@@ -146,6 +164,9 @@ private:
   VkImageView storage_image_view{ VK_NULL_HANDLE };
   VkSampler sampler{ VK_NULL_HANDLE };
   VkSampleCountFlagBits sample_count{ VK_SAMPLE_COUNT_1_BIT };
+  VkImageAspectFlags image_aspect_flags{ VK_IMAGE_ASPECT_COLOR_BIT };
+  VkExtent3D extent{ 1, 1, 1 };
+  VkFormat format{ VK_FORMAT_UNDEFINED };
   bool image_owns_itself{ true };
   bool is_swapchain{ false };
   std::uint32_t mip_levels{ 1 };
@@ -155,6 +176,9 @@ private:
 
   AllocationInfo image_allocation{};
   VkImage image{ VK_NULL_HANDLE };
+
+  std::array<VkImageView, max_mip_levels * cube_array_layers>
+    cached_framebuffer_views{};
 
   bool sampled{ false };
   bool storage{ false };

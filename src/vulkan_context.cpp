@@ -82,8 +82,8 @@ struct LockFreeQueue
 
   auto push(Message&& msg)
   {
-    size_t t = tail.load(std::memory_order_relaxed);
-    size_t next = (t + 1) % QUEUE_SIZE;
+    std::size_t t = tail.load(std::memory_order_relaxed);
+    std::size_t next = (t + 1) % QUEUE_SIZE;
     if (next == head.load(std::memory_order_acquire)) {
       return false; // queue full
     }
@@ -94,7 +94,7 @@ struct LockFreeQueue
 
   auto pop(Message& out)
   {
-    size_t h = head.load(std::memory_order_relaxed);
+    std::size_t h = head.load(std::memory_order_relaxed);
     if (h == tail.load(std::memory_order_acquire)) {
       return false; // empty
     }
@@ -134,6 +134,34 @@ logger(VkDebugUtilsMessageSeverityFlagBitsEXT,
 }
 
 auto
+query_vulkan_properties(VkPhysicalDevice physical_device, auto& props) -> void
+{
+  vkGetPhysicalDeviceProperties(physical_device, &props.base);
+
+  props.fourteen.sType =
+    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_PROPERTIES;
+  props.fourteen.pNext = nullptr;
+
+  props.thirteen.sType =
+    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES;
+  props.thirteen.pNext = &props.fourteen;
+
+  props.twelve.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES;
+  props.twelve.pNext = &props.thirteen;
+
+  props.eleven.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES;
+  props.eleven.pNext = &props.twelve;
+
+  VkPhysicalDeviceProperties2 device_props2{};
+  device_props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+  device_props2.pNext = &props.eleven;
+
+  vkGetPhysicalDeviceProperties2(physical_device, &device_props2);
+
+  props.base = device_props2.properties;
+}
+
+auto
 Context::create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
   -> Expected<std::unique_ptr<IContext>, ContextError>
 {
@@ -150,7 +178,7 @@ Context::create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
 
   vkb::Instance vkb_instance = inst_ret.value();
 
-  VkSurfaceKHR surf = surface_fn(vkb_instance.instance);
+  VkSurfaceKHR surf = std::move(surface_fn)(vkb_instance.instance);
 
   bool is_headless = false;
   if (VK_NULL_HANDLE == surf) {
@@ -240,11 +268,11 @@ Context::create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
   std::vector<VkFormat> device_depth_formats;
   std::vector<VkPresentModeKHR> device_present_modes;
 
-  const VkFormat depth_formats[] = { VK_FORMAT_D32_SFLOAT_S8_UINT,
-                                     VK_FORMAT_D24_UNORM_S8_UINT,
-                                     VK_FORMAT_D16_UNORM_S8_UINT,
-                                     VK_FORMAT_D32_SFLOAT,
-                                     VK_FORMAT_D16_UNORM };
+  const std::array depth_formats = {
+    VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT,
+    VK_FORMAT_D16_UNORM_S8_UINT,  VK_FORMAT_D32_SFLOAT,
+    VK_FORMAT_D16_UNORM,
+  };
   for (const auto& depth_format : depth_formats) {
     VkFormatProperties format_properties;
     vkGetPhysicalDeviceFormatProperties(
@@ -291,6 +319,9 @@ Context::create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
       vkb_physical.physical_device, surf, &device_surface_capabilities);
   }
   context->device_surface_capabilities = device_surface_capabilities;
+
+  query_vulkan_properties(vkb_physical.physical_device,
+                          context->vulkan_properties);
   context->has_swapchain_maintenance_1 = false;
   context->immediate_commands = std::make_unique<ImmediateCommands>(
     vkb_device.device, context->graphics_queue_family, "Immediate Commands");
@@ -328,7 +359,7 @@ Context::create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
   }
 
   context->swapchain =
-    Unique<Swapchain>{ new Swapchain{ *context, 800U, 600U } };
+    Unique<Swapchain>{ new Swapchain{ *context, 1920U, 1080U } };
   context->timeline_semaphore = create_timeline_semaphore(
     vkb_device.device, context->swapchain->swapchain_image_count() - 1);
 
@@ -423,7 +454,7 @@ Context::update_resource_bindings()
 {
   base::update_resource_bindings();
 
-  if (const auto& should_update = needs_update(); should_update) [[likely]] {
+  if (const auto should_update = needs_update(); !should_update) [[likely]] {
     return;
   }
 
@@ -777,7 +808,8 @@ Context::get_allocator_implementation() -> IAllocator&
   return *allocator_impl;
 }
 
-auto Context::resize_swapchain(std::uint32_t width, std::uint32_t height) -> void
+auto
+Context::resize_swapchain(std::uint32_t width, std::uint32_t height) -> void
 {
   if (swapchain) {
     swapchain->resize(width, height);
@@ -802,32 +834,14 @@ Context::submit(ICommandBuffer& commandBuffer, TextureHandle present)
 #endif // LVK_WITH_TRACY_GPU
 
   if (present) {
-    const auto& tex = *texture_pool.get(present);
+    const auto* tex = *texture_pool.get(present);
 
     assert(tex->is_swapchain_image());
 
-    VkPipelineStageFlags2 src_stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-    VkAccessFlags2 src_access = VK_ACCESS_2_NONE;
-    VkPipelineStageFlags2 dst_stage =
-      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT |
-      VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-    VkAccessFlags2 dst_access = VK_ACCESS_2_NONE | VK_ACCESS_2_SHADER_WRITE_BIT;
-
-    Transition::image(vk_buffer.get_command_buffer(),
-                      tex->get_image(),
-                      VK_IMAGE_LAYOUT_UNDEFINED,
-                      VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                      VkImageSubresourceRange{
-                        VK_IMAGE_ASPECT_COLOR_BIT,
-                        0,
-                        VK_REMAINING_MIP_LEVELS,
-                        0,
-                        VK_REMAINING_ARRAY_LAYERS,
-                      },
-                      src_stage,
-                      src_access,
-                      dst_stage,
-                      dst_access);
+    Transition::swapchain_image(vk_buffer.get_command_buffer(),
+                                tex->get_image(),
+                                VK_IMAGE_LAYOUT_UNDEFINED,
+                                VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
   }
 
   const auto has_swapchain = swapchain != nullptr;
@@ -895,7 +909,7 @@ Context::destroy(TextureHandle handle) -> void
     return;
   }
 
-  auto* texture = maybe_texture.value();
+  const auto* texture = maybe_texture.value();
   if (texture == nullptr) {
     return;
   }
@@ -915,6 +929,13 @@ Context::destroy(TextureHandle handle) -> void
     vkDestroyImageView(device, img->get_image_view(), allocation_callbacks);
     if (const auto storage_view = img->get_storage_image_view())
       vkDestroyImageView(device, storage_view, allocation_callbacks);
+
+    // destroy all framebuffer views
+    for (auto&& view : img->get_framebuffer_views()) {
+      if (view != VK_NULL_HANDLE) {
+        vkDestroyImageView(device, view, allocation_callbacks);
+      }
+    }
   });
 
   if (!texture->owns_self()) {

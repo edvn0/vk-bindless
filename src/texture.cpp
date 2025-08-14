@@ -12,15 +12,21 @@
 
 namespace VkBindless {
 
-template <typename T0, typename... Ts>
-constexpr auto max(T0 &&first, Ts &&...rest) {
+template<typename T0, typename... Ts>
+constexpr auto
+max(T0&& first, Ts&&... rest)
+{
   auto max_value = std::forward<T0>(first);
   ((max_value = max_value < rest ? rest : max_value), ...);
   return max_value;
 }
 
-auto VkTexture::create_internal_image(IContext& ctx,const VkTextureDescription& description) -> void {
- auto &allocator = ctx.get_allocator_implementation();
+auto
+VkTexture::create_internal_image(IContext& ctx,
+                                 const VkTextureDescription& description)
+  -> void
+{
+  auto& allocator = ctx.get_allocator_implementation();
 
   VkImageCreateInfo image_info{};
   image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -28,11 +34,11 @@ auto VkTexture::create_internal_image(IContext& ctx,const VkTextureDescription& 
   image_info.imageType = VK_IMAGE_TYPE_2D;
   image_info.format = description.format;
   image_info.extent = description.extent;
-  image_info.mipLevels =
-      description.mip_levels.value_or(static_cast<std::uint32_t>(
-          std::log2(max(description.extent.width, description.extent.height,
-                        description.extent.depth)) +
-          1));
+  image_info.mipLevels = description.mip_levels.value_or(
+    static_cast<std::uint32_t>(std::log2(max(description.extent.width,
+                                             description.extent.height,
+                                             description.extent.depth)) +
+                               1));
   image_info.arrayLayers = description.layers;
   image_info.samples = description.sample_count;
   image_info.tiling = description.tiling;
@@ -44,18 +50,22 @@ auto VkTexture::create_internal_image(IContext& ctx,const VkTextureDescription& 
   assert(image_info.mipLevels > 0 && image_info.arrayLayers > 0 &&
          "Image must have at least one mip level and one layer");
 
-
   if (description.debug_name.empty()) {
-    set_name_for_object(
-        ctx.get_device(), VK_OBJECT_TYPE_IMAGE, image, std::format("{}-[{}x{}]", description.debug_name, description.extent.width, description.extent.height));
-      }
+    set_name_for_object(ctx.get_device(),
+                        VK_OBJECT_TYPE_IMAGE,
+                        image,
+                        std::format("{}-[{}x{}]",
+                                    description.debug_name,
+                                    description.extent.width,
+                                    description.extent.height));
+  }
 
   AllocationCreateInfo alloc_info{
-      .usage = MemoryUsage::AutoPreferDevice,
-      .map_memory = false,
-      .preferred_memory_bits = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-      .required_memory_bits = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-      .debug_name = std::string{description.debug_name},
+    .usage = MemoryUsage::AutoPreferDevice,
+    .map_memory = false,
+    .preferred_memory_bits = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+    .required_memory_bits = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+    .debug_name = std::string{ description.debug_name },
   };
 
   auto could_allocate = allocator.allocate_image(image_info, alloc_info);
@@ -64,26 +74,29 @@ auto VkTexture::create_internal_image(IContext& ctx,const VkTextureDescription& 
                              could_allocate.error().message);
   }
 
-  auto &&[img, alloc] = std::move(could_allocate.value());
+  auto&& [img, alloc] = std::move(could_allocate.value());
   image = img;
   image_allocation = alloc;
   mip_levels = image_info.mipLevels;
   array_layers = image_info.arrayLayers;
 }
 
-VkTexture::VkTexture(IContext &ctx, const VkTextureDescription &description)
-    : sample_count{description.sample_count},
-      image_owns_itself{description.is_owning},
-      is_swapchain{description.is_swapchain},
-      sampled{static_cast<bool>(description.usage_flags &
-                                TextureUsageFlags::Sampled)},
-      storage{static_cast<bool>(description.usage_flags &
-                                TextureUsageFlags::Storage)} {
-if (!description.externally_created_image) {
-  create_internal_image(ctx, description);
-} else {
-  image = *description.externally_created_image;
-}
+VkTexture::VkTexture(IContext& ctx, const VkTextureDescription& description)
+  : sample_count{ description.sample_count }
+  , image_owns_itself{ description.is_owning }
+  , is_swapchain{ description.is_swapchain }
+  , sampled{ static_cast<bool>(description.usage_flags &
+                               TextureUsageFlags::Sampled) }
+  , storage{ static_cast<bool>(description.usage_flags &
+                               TextureUsageFlags::Storage) }
+  , format{ description.format }
+  , extent{ description.extent }
+{
+  if (!description.externally_created_image) {
+    create_internal_image(ctx, description);
+  } else {
+    image = *description.externally_created_image;
+  }
   if (is_swapchain)
     return;
 
@@ -94,8 +107,8 @@ if (!description.externally_created_image) {
   view_info.image = image;
   view_info.viewType = (description.extent.width == description.extent.height &&
                         description.layers == 6)
-                           ? VK_IMAGE_VIEW_TYPE_CUBE
-                           : VK_IMAGE_VIEW_TYPE_2D;
+                         ? VK_IMAGE_VIEW_TYPE_CUBE
+                         : VK_IMAGE_VIEW_TYPE_2D;
   view_info.format = description.format;
   view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
   view_info.subresourceRange.baseMipLevel = 0;
@@ -108,7 +121,7 @@ if (!description.externally_created_image) {
   view_info.components.a = VK_COMPONENT_SWIZZLE_A;
 
   VK_VERIFY(
-      vkCreateImageView(ctx.get_device(), &view_info, nullptr, &image_view));
+    vkCreateImageView(ctx.get_device(), &view_info, nullptr, &image_view));
 
   mip_layer_views.resize(mip_levels * array_layers);
 
@@ -123,21 +136,22 @@ if (!description.externally_created_image) {
         view_info.subresourceRange.layerCount = 1;
         view_info.subresourceRange.levelCount = 1;
 
-        auto &mip_layer_view = mip_layer_views[index];
-        VK_VERIFY(vkCreateImageView(ctx.get_device(), &view_info, nullptr,
-                                    &mip_layer_view));
+        auto& mip_layer_view = mip_layer_views[index];
+        VK_VERIFY(vkCreateImageView(
+          ctx.get_device(), &view_info, nullptr, &mip_layer_view));
       }
     }
   }
 }
 
-auto VkTexture::create(IContext &context,
-                       const VkTextureDescription &description)
-    -> Holder<TextureHandle> {
-  auto &pool = context.get_texture_pool();
+auto
+VkTexture::create(IContext& context, const VkTextureDescription& description)
+  -> Holder<TextureHandle>
+{
+  auto& pool = context.get_texture_pool();
   auto handle = pool.create(VkTexture{
-      context,
-      description,
+    context,
+    description,
   });
 
   if (!handle.valid()) {
@@ -145,36 +159,92 @@ auto VkTexture::create(IContext &context,
   }
 
   return Holder{
-      &context,
-      std::move(handle),
+    &context,
+    std::move(handle),
   };
 }
 
-auto VkTextureSampler::create(IContext &context,
-                              const VkSamplerCreateInfo &info)
-    -> Holder<SamplerHandle> {
-  auto &pool = context.get_sampler_pool();
-  VkSampler sampler{VK_NULL_HANDLE};
-  VkSamplerCreateInfo sampler_info{info};
+auto
+VkTextureSampler::create(IContext& context, const VkSamplerCreateInfo& info)
+  -> Holder<SamplerHandle>
+{
+  auto& pool = context.get_sampler_pool();
+  VkSampler sampler{ VK_NULL_HANDLE };
+  VkSamplerCreateInfo sampler_info{ info };
   sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
   sampler_info.pNext = nullptr;
   VK_VERIFY(
-      vkCreateSampler(context.get_device(), &sampler_info, nullptr, &sampler));
+    vkCreateSampler(context.get_device(), &sampler_info, nullptr, &sampler));
 
   auto handle = pool.create(std::move(sampler));
   return Holder{
-      &context,
-      std::move(handle),
+    &context,
+    std::move(handle),
   };
 }
 
-auto VkTexture::create_image_view(VkDevice device,
-                                  const VkImageViewCreateInfo &view_info)
-    -> void {
+auto
+VkTexture::create_image_view(VkDevice device,
+                             const VkImageViewCreateInfo& view_info) -> void
+{
   VkImageViewCreateInfo copy = view_info;
   copy.image = image;
   copy.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
   VK_VERIFY(vkCreateImageView(device, &copy, nullptr, &image_view));
+}
+
+auto
+VkTexture::get_or_create_framebuffer_view(IContext& context,
+                                          std::uint32_t mip,
+                                          std::uint32_t layer) -> VkImageView
+{
+  if (mip >= max_mip_levels || layer >= cube_array_layers) {
+    return VK_NULL_HANDLE;
+  }
+
+  if (VK_NULL_HANDLE !=
+      cached_framebuffer_views.at(mip * cube_array_layers + layer)) {
+    return cached_framebuffer_views.at(mip * cube_array_layers + layer);
+  }
+  const VkImageViewCreateInfo view_info{
+    .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+    .pNext = nullptr,
+    .image = image,
+    .viewType = (extent.width == extent.height && array_layers == 6)
+                  ? VK_IMAGE_VIEW_TYPE_CUBE
+                  : VK_IMAGE_VIEW_TYPE_2D,
+    .format = format,
+    .components = {
+      .r = VK_COMPONENT_SWIZZLE_R,
+      .g = VK_COMPONENT_SWIZZLE_G,
+      .b = VK_COMPONENT_SWIZZLE_B,
+      .a = VK_COMPONENT_SWIZZLE_A,
+    },
+    .subresourceRange = {
+      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      .baseMipLevel = mip,
+      .levelCount = 1,
+      .baseArrayLayer = layer,
+      .layerCount = 1,
+    },
+  };
+
+  VK_VERIFY(vkCreateImageView(
+    context.get_device(),
+    &view_info,
+    nullptr,
+    &cached_framebuffer_views[mip * cube_array_layers + layer]));
+  auto name = std::format("Framebuffer_({})_view (mip: {}, layer: {})",
+                          (const void*)image,
+                          mip,
+                          layer);
+  set_name_for_object(
+    context.get_device(),
+    VK_OBJECT_TYPE_IMAGE_VIEW,
+    cached_framebuffer_views.at(mip * cube_array_layers + layer),
+    name);
+
+  return cached_framebuffer_views[mip * cube_array_layers + layer];
 }
 
 } // namespace VkBindless

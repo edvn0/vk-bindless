@@ -296,7 +296,7 @@ const VkHdrMetadataEXT metadata = {
 vkSetHdrMetadataEXT(device_, 1, &swapchain_, &metadata);
 }
 */
-  std::array<VkImage, max_swapchain_images> swapchain_images;
+  std::array<VkImage, max_swapchain_images> swapchain_images{};
   VK_VERIFY(vkGetSwapchainImagesKHR(
     context_ref.get_device(), swapchain_khr, &image_count, nullptr));
   if (image_count > max_swapchain_images) {
@@ -308,7 +308,7 @@ vkSetHdrMetadataEXT(device_, 1, &swapchain_, &metadata);
                                     swapchain_images.data()));
 
   static constexpr auto create_semaphore = [](VkDevice device,
-                                              std::string_view) -> VkSemaphore {
+                                              std::string_view) {
     const VkSemaphoreCreateInfo semaphore_info{
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
       .pNext = nullptr,
@@ -316,8 +316,10 @@ vkSetHdrMetadataEXT(device_, 1, &swapchain_, &metadata);
     };
     VkSemaphore semaphore;
     VK_VERIFY(vkCreateSemaphore(device, &semaphore_info, nullptr, &semaphore));
-    // set_debug_object_name(device, VK_OBJECT_TYPE_SEMAPHORE,
-    //                        (uint64_t)semaphore, n);
+    set_name_for_object(device,
+                        VK_OBJECT_TYPE_SEMAPHORE,
+                        (uint64_t)semaphore,
+                        std::format("Semaphore: swapchain-acquire"));
     return semaphore;
   };
 
@@ -339,7 +341,7 @@ vkSetHdrMetadataEXT(device_, 1, &swapchain_, &metadata);
         .is_owning = true,
         .is_swapchain = true,
         .externally_created_image = swapchain_images[i],
-        .debug_name = "Swapchain Image " + std::to_string(i),
+        .debug_name = std::format("Swapchain_Image_{}", i),
       },
     };
 
@@ -349,7 +351,7 @@ vkSetHdrMetadataEXT(device_, 1, &swapchain_, &metadata);
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .pNext = nullptr,
             .flags = 0,
-            .image = VK_NULL_HANDLE, // will be set later
+            .image = VK_NULL_HANDLE, 
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
             .format = swapchain_surface_format.format,
             .components =
@@ -376,7 +378,9 @@ vkSetHdrMetadataEXT(device_, 1, &swapchain_, &metadata);
 Swapchain::~Swapchain()
 {
   for (TextureHandle handle : swapchain_textures) {
-    context().destroy(handle);
+    if (handle.valid()) {
+      context().destroy(handle);
+    }
   }
   vkDestroySwapchainKHR(context_ref.get_device(), swapchain_khr, nullptr);
   for (VkSemaphore sem : acquire_semaphores) {
@@ -446,11 +450,10 @@ Swapchain::present(VkSemaphore wait_semaphore)
     return fence;
   };
 
-  if (context_ref.has_swapchain_maintenance_1) {
-    if (!present_fences[swapchain_image_index]) {
-      present_fences[swapchain_image_index] =
-        create_fence(context_ref.get_device(), "Fence: present-fence");
-    }
+  if (context_ref.has_swapchain_maintenance_1 &&
+      !present_fences[swapchain_image_index]) {
+    present_fences[swapchain_image_index] =
+      create_fence(context_ref.get_device(), "Fence: present-fence");
   }
   VkResult r = vkQueuePresentKHR(graphics_queue_handle, &pi);
   if (r == VK_SUBOPTIMAL_KHR || r == VK_ERROR_OUT_OF_DATE_KHR) {

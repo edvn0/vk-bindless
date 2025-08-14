@@ -3,20 +3,25 @@
 #include "vk-bindless/graphics_context.hpp"
 #include "vk-bindless/handle.hpp"
 
+#include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <variant>
 
 namespace VkBindless {
 
 static constexpr auto max_colour_attachments = 8U;
 
-enum class IndexFormat : std::uint8_t {
+enum class IndexFormat : std::uint8_t
+{
   UI8,
   UI16,
   UI32,
 };
 
-enum Topology : uint8_t {
+enum Topology : uint8_t
+{
   Point,
   Line,
   LineStrip,
@@ -25,51 +30,55 @@ enum Topology : uint8_t {
   Patch,
 };
 
-enum class ColorSpace : std::uint8_t {
+enum class ColorSpace : std::uint8_t
+{
   SRGB_NONLINEAR,
   SRGB_EXTENDED_LINEAR,
   HDR10,
   BT709_LINEAR,
 };
 
-enum class TextureType : std::uint8_t {
+enum class TextureType : std::uint8_t
+{
   Two,
   Three,
   Cube,
 };
 
-struct Dimensions {
+struct Dimensions
+{
   std::uint32_t width = 1;
   std::uint32_t height = 1;
   std::uint32_t depth = 1;
-  inline auto divide1D(std::integral auto v) const {
+  inline auto divide1D(std::integral auto v) const
+  {
     return Dimensions{
-        .width = width / v,
-        .height = height,
-        .depth = depth,
+      .width = width / v,
+      .height = height,
+      .depth = depth,
     };
   }
-  inline auto divide2D(std::integral auto v) const {
+  inline auto divide2D(std::integral auto v) const
+  {
     return Dimensions{
-        .width = width / v,
-        .height = height / v,
-        .depth = depth,
+      .width = width / v,
+      .height = height / v,
+      .depth = depth,
     };
   }
-  inline auto divide3D(std::integral auto v) const {
+  inline auto divide3D(std::integral auto v) const
+  {
     return Dimensions{
-        .width = width / v,
-        .height = height / v,
-        .depth = depth / v,
+      .width = width / v,
+      .height = height / v,
+      .depth = depth / v,
     };
   }
-  inline bool operator==(const Dimensions &other) const {
-    return width == other.width && height == other.height &&
-           depth == other.depth;
-  }
+  inline auto operator<=>(const Dimensions& other) const = default;
 };
 
-enum class CompareOp : std::uint8_t {
+enum class CompareOp : std::uint8_t
+{
   Never = 0,
   Less,
   Equal,
@@ -80,7 +89,8 @@ enum class CompareOp : std::uint8_t {
   AlwaysPass
 };
 
-enum class StencilOp : std::uint8_t {
+enum class StencilOp : std::uint8_t
+{
   Keep = 0,
   Zero,
   Replace,
@@ -91,7 +101,8 @@ enum class StencilOp : std::uint8_t {
   DecrementWrap
 };
 
-enum class BlendOp : std::uint8_t {
+enum class BlendOp : std::uint8_t
+{
   BlendOp_Add = 0,
   BlendOp_Subtract,
   BlendOp_ReverseSubtract,
@@ -99,7 +110,8 @@ enum class BlendOp : std::uint8_t {
   BlendOp_Max
 };
 
-enum class BlendFactor : std::uint8_t {
+enum class BlendFactor : std::uint8_t
+{
   BlendFactor_Zero = 0,
   BlendFactor_One,
   BlendFactor_SrcColor,
@@ -121,7 +133,8 @@ enum class BlendFactor : std::uint8_t {
   BlendFactor_OneMinusSrc1Alpha
 };
 
-enum class LoadOp : std::uint8_t {
+enum class LoadOp : std::uint8_t
+{
   Invalid = 0,
   DontCare,
   Load,
@@ -129,14 +142,16 @@ enum class LoadOp : std::uint8_t {
   None,
 };
 
-enum class StoreOp : std::uint8_t {
+enum class StoreOp : std::uint8_t
+{
   DontCare = 0,
   Store,
   MsaaResolve,
   None,
 };
 
-enum class ResolveMode : std::uint8_t {
+enum class ResolveMode : std::uint8_t
+{
   None = 0,
   SampleZero, // always supported
   Average,
@@ -144,7 +159,8 @@ enum class ResolveMode : std::uint8_t {
   Max,
 };
 
-enum class ShaderStage : std::uint8_t {
+enum class ShaderStage : std::uint8_t
+{
   Vert,
   Tesc,
   Tese,
@@ -161,54 +177,59 @@ enum class ShaderStage : std::uint8_t {
   Callable,
 };
 
-struct Dependencies {
+struct Dependencies
+{
   static constexpr auto max_dependencies = 4U;
   std::array<TextureHandle, max_dependencies> textures = {};
   std::array<BufferHandle, max_dependencies> buffers = {};
 };
 
-union ClearColorValue {
-  std::array<float, 4> float32;
-  std::array<std::uint32_t, 4> uint32;
-  std::array<std::int32_t, 4> int32;
-};
+using ClearColourValue = std::variant<std::array<float, 4>,
+                                      std::array<std::uint32_t, 4>,
+                                      std::array<std::int32_t, 4>>;
 
-struct RenderPass final {
-  struct AttachmentDesc final {
-    LoadOp loadOp = LoadOp::Invalid;
-    StoreOp storeOp = StoreOp::Store;
-    ResolveMode resolveMode = ResolveMode::Average;
+struct RenderPass final
+{
+  struct AttachmentDesc final
+  {
+    LoadOp load_op = LoadOp::Invalid;
+    StoreOp store_op = StoreOp::Store;
+    ResolveMode resolve_mode = ResolveMode::Average;
     std::uint8_t layer = 0;
     std::uint8_t level = 0;
-    ClearColorValue clearColor = {.float32 = {0.0f, 0.0f, 0.0f, 0.0f}};
-    float clearDepth = 1.0f;
-    uint32_t clearStencil = 0;
+    ClearColourValue clear_colour =
+      std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 0.0f };
+    float clear_depth = 1.0f;
+    uint32_t clear_stencil = 0;
   };
 
-  AttachmentDesc color[max_colour_attachments] = {};
+  std::array<AttachmentDesc, max_colour_attachments> color{};
   AttachmentDesc depth = {
-      .loadOp = LoadOp::DontCare,
-      .storeOp = StoreOp::DontCare,
+    .load_op = LoadOp::DontCare,
+    .store_op = StoreOp::DontCare,
   };
   AttachmentDesc stencil = {
-      .loadOp = LoadOp::Invalid,
-      .storeOp = StoreOp::DontCare,
+    .load_op = LoadOp::Invalid,
+    .store_op = StoreOp::DontCare,
   };
 
   std::uint32_t layer_count = 1;
   std::uint32_t view_mask = 0;
 
-  auto get_colour_attachment_count() const {
+  auto get_colour_attachment_count() const
+  {
     std::uint32_t n = 0;
-    while (n < max_colour_attachments && color[n].loadOp != LoadOp::Invalid) {
+    while (n < max_colour_attachments && color[n].load_op != LoadOp::Invalid) {
       n++;
     }
     return n;
   }
 };
 
-struct Framebuffer final {
-  struct AttachmentDesc {
+struct Framebuffer final
+{
+  struct AttachmentDesc
+  {
     TextureHandle texture;
     TextureHandle resolve_texture;
   };
@@ -218,7 +239,8 @@ struct Framebuffer final {
 
   std::string debug_name = "";
 
-  auto get_colour_attachment_count() const {
+  auto get_colour_attachment_count() const
+  {
     std::uint32_t n = 0;
     while (n < max_colour_attachments && color[n].texture) {
       n++;
@@ -227,7 +249,8 @@ struct Framebuffer final {
   }
 };
 
-struct Viewport {
+struct Viewport
+{
   float x = 0.0f;
   float y = 0.0f;
   float width = 1.0f;
@@ -236,14 +259,16 @@ struct Viewport {
   float maxDepth = 0.0f;
 };
 
-struct ScissorRect {
+struct ScissorRect
+{
   std::uint32_t x = 0;
   std::uint32_t y = 0;
   std::uint32_t width = 0;
   std::uint32_t height = 0;
 };
 
-struct StencilState {
+struct StencilState
+{
   StencilOp stencil_failure_operation = StencilOp::Keep;
   StencilOp depth_failure_operation = StencilOp::Keep;
   StencilOp depth_stencil_pass_operation = StencilOp::Keep;
@@ -252,24 +277,28 @@ struct StencilState {
   std::uint32_t write_mask = (std::uint32_t)~0;
 };
 
-struct DepthState {
-  CompareOp compare_operation{CompareOp::AlwaysPass};
-  bool is_depth_write_enabled{false};
+struct DepthState
+{
+  CompareOp compare_operation{ CompareOp::AlwaysPass };
+  bool is_depth_write_enabled{ false };
 };
 
-struct TextureLayers {
+struct TextureLayers
+{
   std::uint32_t mip_level = 0;
   std::uint32_t layer = 0;
   std::uint32_t num_layers = 1;
 };
 
-struct Offset3D {
+struct Offset3D
+{
   std::int32_t x = 0;
   std::int32_t y = 0;
   std::int32_t z = 0;
 };
 
-struct ICommandBuffer {
+struct ICommandBuffer
+{
 public:
   virtual ~ICommandBuffer() = default;
   /*
@@ -291,120 +320,132 @@ public:
     virtual auto cmd_dispatch_thread_groups(const Dimensions &threadgroup_count,
                                             const Dependencies &deps = {})
         -> void = 0;
+*/
+  virtual auto cmd_begin_rendering(const RenderPass& render_pass,
+                                   const Framebuffer& framebuffer,
+                                   const Dependencies& deps = {}) -> void = 0;
+  virtual auto cmd_end_rendering() -> void = 0;
+  /*
+      virtual auto cmd_bind_viewport(const Viewport &viewport) -> void = 0;
+      virtual auto cmd_bind_scissor_rect(const ScissorRect &rect) -> void = 0;
 
-    virtual auto cmd_begin_rendering(const RenderPass &render_pass,
-                                     const Framebuffer &framebuffer,
-                                     const Dependencies &deps = {}) -> void = 0;
-    virtual auto cmd_end_rendering() -> void = 0;
+      virtual auto cmd_bind_render_pipeline(GraphicsPipelineHandle handle)
+          -> void = 0;
+      virtual auto cmd_bind_depth_state(const DepthState &state) -> void = 0;
 
-    virtual auto cmd_bind_viewport(const Viewport &viewport) -> void = 0;
-    virtual auto cmd_bind_scissor_rect(const ScissorRect &rect) -> void = 0;
+      virtual auto cmd_bind_vertex_buffer(std::uint32_t index, BufferHandle
+      buffer, std::uint64_t buffer_offset = 0)
+          -> void = 0;
+      virtual auto cmd_bind_index_buffer(BufferHandle index_buffer,
+                                         IndexFormat index_format,
+                                         std::uint64_t index_buffer_offset = 0)
+          -> void = 0;
 
-    virtual auto cmd_bind_render_pipeline(GraphicsPipelineHandle handle)
-        -> void = 0;
-    virtual auto cmd_bind_depth_state(const DepthState &state) -> void = 0;
+      virtual auto cmd_push_constants(const void *data, std::size_t size,
+                                      std::size_t offset = 0) -> void = 0;
+      template <typename Struct>
+      auto cmd_push_constants(const Struct &data, std::size_t offset = 0) ->
+     void { this->cmd_push_constants(&data, sizeof(Struct), offset);
+      }
 
-    virtual auto cmd_bind_vertex_buffer(std::uint32_t index, BufferHandle
-    buffer, std::uint64_t buffer_offset = 0)
-        -> void = 0;
-    virtual auto cmd_bind_index_buffer(BufferHandle index_buffer,
-                                       IndexFormat index_format,
-                                       std::uint64_t index_buffer_offset = 0)
-        -> void = 0;
+      virtual auto cmd_fill_buffer(BufferHandle buffer, std::size_t
+     buffer_offset, std::size_t size, std::uint32_t data)
+          -> void = 0;
+      virtual auto cmd_update_buffer(BufferHandle buffer, std::size_t
+      buffer_offset, std::size_t size, const void *data)
+          -> void = 0;
+      template <typename Struct>
+      auto cmd_update_buffer(BufferHandle buffer, const Struct &data,
+                             std::size_t buffer_offset = 0) -> void {
+        this->cmd_update_buffer(buffer, buffer_offset, sizeof(Struct), &data);
+      }
 
-    virtual auto cmd_push_constants(const void *data, std::size_t size,
-                                    std::size_t offset = 0) -> void = 0;
-    template <typename Struct>
-    auto cmd_push_constants(const Struct &data, std::size_t offset = 0) -> void
-    { this->cmd_push_constants(&data, sizeof(Struct), offset);
-    }
+      virtual auto cmd_draw(std::uint32_t vertex_count,
+                            std::uint32_t instance_count = 1,
+                            std::uint32_t first_vertex = 0,
+                            std::uint32_t base_instance = 0) -> void = 0;
+      virtual auto cmd_draw_indexed(std::uint32_t index_count,
+                                    std::uint32_t instance_count = 1,
+                                    std::uint32_t first_index = 0,
+                                    std::int32_t vertex_offset = 0,
+                                    std::uint32_t base_instance = 0) -> void =
+     0;
 
-    virtual auto cmd_fill_buffer(BufferHandle buffer, std::size_t buffer_offset,
-                                 std::size_t size, std::uint32_t data)
-        -> void = 0;
-    virtual auto cmd_update_buffer(BufferHandle buffer, std::size_t
-    buffer_offset, std::size_t size, const void *data)
-        -> void = 0;
-    template <typename Struct>
-    auto cmd_update_buffer(BufferHandle buffer, const Struct &data,
-                           std::size_t buffer_offset = 0) -> void {
-      this->cmd_update_buffer(buffer, buffer_offset, sizeof(Struct), &data);
-    }
+      virtual auto cmd_draw_indirect(BufferHandle indirect_buffer,
+                                     std::size_t indirect_buffer_offset,
+                                     std::uint32_t draw_count,
+                                     std::uint32_t stride = 0) -> void = 0;
+      virtual auto cmd_draw_indexed_indirect(BufferHandle indirect_buffer,
+                                             std::size_t indirect_buffer_offset,
+                                             std::uint32_t draw_count,
+                                             std::uint32_t stride = 0) -> void =
+      0; virtual auto cmd_draw_indexed_indirect_count( BufferHandle
+      indirect_buffer, std::size_t indirect_buffer_offset, BufferHandle
+      count_buffer, std::size_t count_buffer_offset, std::uint32_t
+     max_draw_count, std::uint32_t stride = 0) -> void = 0;
 
-    virtual auto cmd_draw(std::uint32_t vertex_count,
-                          std::uint32_t instance_count = 1,
-                          std::uint32_t first_vertex = 0,
-                          std::uint32_t base_instance = 0) -> void = 0;
-    virtual auto cmd_draw_indexed(std::uint32_t index_count,
-                                  std::uint32_t instance_count = 1,
-                                  std::uint32_t first_index = 0,
-                                  std::int32_t vertex_offset = 0,
-                                  std::uint32_t base_instance = 0) -> void = 0;
+      virtual auto cmd_draw_mesh_tasks(const Dimensions &threadgroup_count)
+          -> void = 0;
+      virtual auto cmd_draw_mesh_tasks_indirect(BufferHandle indirect_buffer,
+                                                std::size_t
+      indirect_buffer_offset, std::uint32_t draw_count, std::uint32_t stride =
+     0)
+          -> void = 0;
+      virtual auto cmd_draw_mesh_tasks_indirect_count(
+          BufferHandle indirect_buffer, std::size_t indirect_buffer_offset,
+          BufferHandle count_buffer, std::size_t count_buffer_offset,
+          std::uint32_t max_draw_count, std::uint32_t stride = 0) -> void = 0;
 
-    virtual auto cmd_draw_indirect(BufferHandle indirect_buffer,
-                                   std::size_t indirect_buffer_offset,
-                                   std::uint32_t draw_count,
-                                   std::uint32_t stride = 0) -> void = 0;
-    virtual auto cmd_draw_indexed_indirect(BufferHandle indirect_buffer,
-                                           std::size_t indirect_buffer_offset,
-                                           std::uint32_t draw_count,
-                                           std::uint32_t stride = 0) -> void =
-    0; virtual auto cmd_draw_indexed_indirect_count( BufferHandle
-    indirect_buffer, std::size_t indirect_buffer_offset, BufferHandle
-    count_buffer, std::size_t count_buffer_offset, std::uint32_t max_draw_count,
-    std::uint32_t stride = 0) -> void = 0;
+      virtual auto cmd_trace_rays(std::uint32_t width, std::uint32_t height,
+                                  std::uint32_t depth = 1,
+                                  const Dependencies &deps = {}) -> void = 0;
 
-    virtual auto cmd_draw_mesh_tasks(const Dimensions &threadgroup_count)
-        -> void = 0;
-    virtual auto cmd_draw_mesh_tasks_indirect(BufferHandle indirect_buffer,
-                                              std::size_t
-    indirect_buffer_offset, std::uint32_t draw_count, std::uint32_t stride = 0)
-        -> void = 0;
-    virtual auto cmd_draw_mesh_tasks_indirect_count(
-        BufferHandle indirect_buffer, std::size_t indirect_buffer_offset,
-        BufferHandle count_buffer, std::size_t count_buffer_offset,
-        std::uint32_t max_draw_count, std::uint32_t stride = 0) -> void = 0;
+      virtual auto cmd_set_blend_color(const float color[4]) -> void = 0;
+      virtual auto cmd_set_depth_bias(float constant_factor, float slope_factor,
+                                      float clamp = 0.0f) -> void = 0;
+      virtual auto cmd_set_depth_bias_enable(bool enable) -> void = 0;
 
-    virtual auto cmd_trace_rays(std::uint32_t width, std::uint32_t height,
-                                std::uint32_t depth = 1,
-                                const Dependencies &deps = {}) -> void = 0;
+      virtual auto cmd_reset_query_pool(QueryPoolHandle pool,
+                                        std::uint32_t first_query,
+                                        std::uint32_t query_count) -> void = 0;
+      virtual auto cmd_write_timestamp(QueryPoolHandle pool, std::uint32_t
+     query)
+          -> void = 0;
 
-    virtual auto cmd_set_blend_color(const float color[4]) -> void = 0;
-    virtual auto cmd_set_depth_bias(float constant_factor, float slope_factor,
-                                    float clamp = 0.0f) -> void = 0;
-    virtual auto cmd_set_depth_bias_enable(bool enable) -> void = 0;
-
-    virtual auto cmd_reset_query_pool(QueryPoolHandle pool,
-                                      std::uint32_t first_query,
-                                      std::uint32_t query_count) -> void = 0;
-    virtual auto cmd_write_timestamp(QueryPoolHandle pool, std::uint32_t query)
-        -> void = 0;
-
-    virtual auto cmd_clear_color_image(TextureHandle tex,
-                                       const ClearColorValue &value,
-                                       const TextureLayers &layers = {})
-        -> void = 0;
-    virtual auto cmd_copy_image(TextureHandle src, TextureHandle dst,
-                                const Dimensions &extent,
-                                const Offset3D &src_offset = {},
-                                const Offset3D &dst_offset = {},
-                                const TextureLayers &src_layers = {},
-                                const TextureLayers &dst_layers = {}) -> void =
-    0; virtual auto cmd_generate_mipmap(TextureHandle handle) -> void = 0;
-    */
+      virtual auto cmd_clear_color_image(TextureHandle tex,
+                                         const ClearColourValue &value,
+                                         const TextureLayers &layers = {})
+          -> void = 0;
+      virtual auto cmd_copy_image(TextureHandle src, TextureHandle dst,
+                                  const Dimensions &extent,
+                                  const Offset3D &src_offset = {},
+                                  const Offset3D &dst_offset = {},
+                                  const TextureLayers &src_layers = {},
+                                  const TextureLayers &dst_layers = {}) -> void
+     = 0; virtual auto cmd_generate_mipmap(TextureHandle handle) -> void = 0;
+      */
 };
 
-class CommandBuffer final : public ICommandBuffer {
+class CommandBuffer final : public ICommandBuffer
+{
+  static constexpr Dependencies empty_deps{};
+
 public:
   CommandBuffer() = default;
-  CommandBuffer(IContext &);
+  CommandBuffer(IContext&);
   ~CommandBuffer() override;
 
   auto get_command_buffer() const { return wrapper->command_buffer; }
 
+  auto cmd_begin_rendering(const RenderPass& render_pass,
+                           const Framebuffer& framebuffer,
+                           const Dependencies& deps = empty_deps)
+    -> void override;
+  auto cmd_end_rendering() -> void override;
+
 private:
-  Context *context{nullptr};
-  const CommandBufferWrapper *wrapper{nullptr};
+  Context* context{ nullptr };
+  const CommandBufferWrapper* wrapper{ nullptr };
 
   Framebuffer framebuffer = {};
   SubmitHandle last_submit_handle = {};
