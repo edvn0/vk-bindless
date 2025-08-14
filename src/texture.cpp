@@ -83,14 +83,14 @@ VkTexture::create_internal_image(IContext& ctx,
 
 VkTexture::VkTexture(IContext& ctx, const VkTextureDescription& description)
   : sample_count{ description.sample_count }
+  , extent{ description.extent }
+  , format{ description.format }
   , image_owns_itself{ description.is_owning }
   , is_swapchain{ description.is_swapchain }
   , sampled{ static_cast<bool>(description.usage_flags &
                                TextureUsageFlags::Sampled) }
   , storage{ static_cast<bool>(description.usage_flags &
                                TextureUsageFlags::Storage) }
-  , format{ description.format }
-  , extent{ description.extent }
 {
   if (!description.externally_created_image) {
     create_internal_image(ctx, description);
@@ -209,6 +209,7 @@ VkTexture::get_or_create_framebuffer_view(IContext& context,
   const VkImageViewCreateInfo view_info{
     .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
     .pNext = nullptr,
+    .flags = 0,
     .image = image,
     .viewType = (extent.width == extent.height && array_layers == 6)
                   ? VK_IMAGE_VIEW_TYPE_CUBE

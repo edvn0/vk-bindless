@@ -6,6 +6,7 @@
 
 #include <bit>
 #include <cstdint>
+#include <format>
 #include <iostream>
 
 static auto
@@ -101,12 +102,13 @@ main() -> std::int32_t
   if (!glfwInit()) {
     const char* error{};
     glfwGetError(&error);
-    std::print(std::cerr, "GLFW error: %s\n", error);
+    std::cout << std::format("GLFW error: %s\n", error);
     return 1;
   }
   glfwSetErrorCallback([](int c, const char* d) {
-    std::print(std::cerr, "GLFW error %d: %s\n", c, d);
+    std::cerr << std::format("GLFW error {}: {}\n", c, d);  
   });
+
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
   std::int32_t initial_width = 1920;

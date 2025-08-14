@@ -230,12 +230,12 @@ struct Framebuffer final
 {
   struct AttachmentDesc
   {
-    TextureHandle texture;
-    TextureHandle resolve_texture;
+    TextureHandle texture{};
+    TextureHandle resolve_texture{};
   };
 
   std::array<AttachmentDesc, max_colour_attachments> color{};
-  AttachmentDesc depth_stencil;
+  AttachmentDesc depth_stencil{};
 
   std::string debug_name = "";
 
