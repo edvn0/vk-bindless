@@ -12,7 +12,7 @@ namespace VkBindless {
 namespace {
 auto
 choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR>& formats,
-                           ColorSpace requestedColorSpace,
+                           const ColorSpace requested_colour_space,
                            bool has_swapchain_ext)
 {
 
@@ -67,7 +67,7 @@ choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR>& formats,
   };
 
   const VkSurfaceFormatKHR preferred = colour_space_to_vk_surface_format(
-    requestedColorSpace, is_native_swapchain_bgr(formats), has_swapchain_ext);
+    requested_colour_space, is_native_swapchain_bgr(formats), has_swapchain_ext);
 
   for (const VkSurfaceFormatKHR& fmt : formats) {
     if (fmt.format == preferred.format &&
@@ -127,15 +127,15 @@ Swapchain::current_texture() -> TextureHandle
       .pValues = &timeline_wait_values[swapchain_image_index],
     };
     vkWaitSemaphores(vulkan_context.get_device(), &wait_info, UINT64_MAX);
-    VkSemaphore acquireSemaphore = acquire_semaphores[swapchain_image_index];
+    const auto& acquire_semaphore = acquire_semaphores[swapchain_image_index];
     vkAcquireNextImageKHR(vulkan_context.get_device(),
                           swapchain_khr,
                           UINT64_MAX,
-                          acquireSemaphore,
+                          acquire_semaphore,
                           VK_NULL_HANDLE,
                           &swapchain_image_index);
     need_next_image = false;
-    vulkan_context.immediate_commands->wait_semaphore(acquireSemaphore);
+    vulkan_context.immediate_commands->wait_semaphore(acquire_semaphore);
   }
 
   if (swapchain_image_index < swapchain_image_count()) {

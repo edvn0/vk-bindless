@@ -37,7 +37,7 @@ using Unique = std::unique_ptr<T, detail::TypeDeleter>;
 template<typename T>
 constexpr auto default_deleter = detail::TypeDeleter{};
 
-#ifdef NDEBUG
+#ifdef IS_DEBUG
 #define VK_VERIFY(call) (call)
 #else
 #define VK_VERIFY(call)                                                        \

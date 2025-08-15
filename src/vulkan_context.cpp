@@ -827,10 +827,10 @@ Context::acquire_command_buffer() -> ICommandBuffer&
 }
 
 auto
-Context::submit(ICommandBuffer& commandBuffer, TextureHandle present)
+Context::submit(ICommandBuffer& cmd_buffer, const TextureHandle present)
   -> Expected<SubmitHandle, std::string>
 {
-  CommandBuffer& vk_buffer = static_cast<CommandBuffer&>(commandBuffer);
+  auto& vk_buffer = dynamic_cast<CommandBuffer&>(cmd_buffer);
 
 #if defined(LVK_WITH_TRACY_GPU)
   TracyVkCollect(pimpl_->tracyVkCtx_, vk_buffer.get_command_buffer());

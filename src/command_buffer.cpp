@@ -115,7 +115,7 @@ CommandBuffer::~CommandBuffer()
 }
 
 CommandBuffer::CommandBuffer(IContext& ctx)
-  : context(static_cast<Context*>(&ctx))
+  : context(dynamic_cast<Context*>(&ctx))
   , wrapper(&context->get_immediate_commands().acquire())
 {
 }
@@ -142,7 +142,7 @@ CommandBuffer::cmd_begin_rendering(const RenderPass& render_pass,
 
   const std::uint32_t framebuffer_colour_attachment_count =
     fb.get_colour_attachment_count();
-#if !NDEBUG
+#if IS_DEBUG
   const std::uint32_t render_pass_colour_attachment_count =
     render_pass.get_colour_attachment_count();
 
@@ -153,14 +153,14 @@ CommandBuffer::cmd_begin_rendering(const RenderPass& render_pass,
   framebuffer = fb;
 
   for (std::uint32_t i = 0; i != framebuffer_colour_attachment_count; i++) {
-    if (TextureHandle handle = fb.color[i].texture) {
+    if (const auto& handle = fb.color[i].texture; handle) {
       auto* texture = *context->get_texture_pool().get(handle);
       Transition::image(wrapper->command_buffer,
                         texture->get_image(),
                         VK_IMAGE_LAYOUT_UNDEFINED,
                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     }
-    if (TextureHandle handle = fb.color[i].resolve_texture) {
+    if (const auto& handle = fb.color[i].resolve_texture; handle) {
       auto* color_resolve_texture = *context->get_texture_pool().get(handle);
       Transition::image(wrapper->command_buffer,
                         color_resolve_texture->get_image(),
@@ -195,10 +195,10 @@ CommandBuffer::cmd_begin_rendering(const RenderPass& render_pass,
     colour_attachments{};
 
   for (std::uint32_t i = 0; i != framebuffer_colour_attachment_count; i++) {
-    const auto& attachment = fb.color[i];
-    assert(!attachment.texture.empty());
+    auto&& [texture, resolve_texture] = fb.color[i];
+    assert(!texture.empty());
 
-    auto* color_texture = *context->get_texture_pool().get(attachment.texture);
+    auto* color_texture = *context->get_texture_pool().get(texture);
     const auto& desc_color = render_pass.color[i];
     if (mip_level && desc_color.level) {
       assert(desc_color.level == mip_level &&
@@ -233,17 +233,17 @@ CommandBuffer::cmd_begin_rendering(const RenderPass& render_pass,
       .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
       .loadOp = load_op_to_vk_attachment_load_op(desc_color.load_op),
       .storeOp = store_op_to_vk_attachment_store_op(desc_color.store_op),
-      .clearValue = { .color = { .float32 = { 0, 0, 0, 0 } } },
+      .clearValue = { .color = { .float32 = { 0, 1, 0, 0 } } },
     };
     set_clear_colour(colour_attachments.at(i).clearValue.color,
                      desc_color.clear_colour);
 
     if (desc_color.store_op == StoreOp::MsaaResolve) {
       assert(samples > 1);
-      assert(!attachment.resolve_texture.empty() &&
+      assert(!resolve_texture.empty() &&
              "Framebuffer attachment should contain a resolve texture");
       auto* colour_resolve_texture =
-        *context->get_texture_pool().get(attachment.resolve_texture);
+        *context->get_texture_pool().get(resolve_texture);
       colour_attachments[i].resolveImageView =
         colour_resolve_texture->get_or_create_framebuffer_view(
           *context, desc_color.level, desc_color.layer);
