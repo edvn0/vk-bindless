@@ -27,9 +27,9 @@ struct WindowState
   bool fullscreen{ false };
 };
 
-template<typename T>
+template<typename T> requires std::is_pointer_v<T>
 static auto
-launder_cast(const void* ptr) -> T
+launder_cast(const void* ptr)
 {
   return std::bit_cast<T>(ptr);
 }
@@ -37,7 +37,7 @@ launder_cast(const void* ptr) -> T
 static auto
 is_wayland() -> bool
 {
-  int platform = glfwGetPlatform();
+  const int platform = glfwGetPlatform();
   return platform == GLFW_PLATFORM_WAYLAND;
 }
 
@@ -46,7 +46,7 @@ key_callback(GLFWwindow* win, int key, int, int action, int, void* user_data)
 {
   if (action != GLFW_PRESS)
     return;
-  auto state = launder_cast<WindowState*>(user_data);
+  const auto state = launder_cast<WindowState*>(user_data);
 
   if (key == GLFW_KEY_ESCAPE) {
     glfwSetWindowShouldClose(win, GLFW_TRUE);
@@ -96,7 +96,9 @@ main() -> std::int32_t
   using namespace VkBindless;
   using GLFWPointer = std::unique_ptr<GLFWwindow, decltype(&destroy_glfw)>;
 
-#ifndef _WIN32
+#ifdef _WIN32
+  glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_WIN32);
+#else
   glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
 #endif
   if (!glfwInit()) {
@@ -106,15 +108,15 @@ main() -> std::int32_t
     return 1;
   }
   glfwSetErrorCallback([](int c, const char* d) {
-    std::cerr << std::format("GLFW error {}: {}\n", c, d);  
+    std::cerr << std::format("GLFW error {}: {}\n", c, d);
   });
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-  std::int32_t initial_width = 1920;
-  std::int32_t initial_height = 1080;
+  constexpr std::int32_t initial_width = 1920;
+  constexpr std::int32_t initial_height = 1080;
 
-  GLFWPointer window(
+  const GLFWPointer window(
     glfwCreateWindow(
       initial_width, initial_height, "Test Window", nullptr, nullptr),
     &destroy_glfw);
@@ -139,12 +141,15 @@ main() -> std::int32_t
   glfwSetWindowUserPointer(window.get(), &state);
   glfwSetKeyCallback(
     window.get(),
-    [](GLFWwindow* win, int key, int scancode, int action, int mods) {
+    [](GLFWwindow* win, const int key,
+                        const int scancode,
+                        const int action,
+                        const int mods) {
       auto s = launder_cast<WindowState*>(glfwGetWindowUserPointer(win));
       key_callback(win, key, scancode, action, mods, s);
     });
 
-  std::int32_t new_width = 0;
+   std::int32_t new_width = 0;
   std::int32_t new_height = 0;
 
   while (!glfwWindowShouldClose(window.get())) {
@@ -162,20 +167,16 @@ main() -> std::int32_t
 
     auto& buf = vulkan_context->acquire_command_buffer();
 
-    constexpr auto make_floats = [](const auto val) {
-      return std::array<float, 4>{ val, val, 0.0F, 1.0F };
-    };
-
     buf.cmd_begin_rendering(
-      { .color = { RenderPass::AttachmentDesc{
+      { .color = { RenderPass::AttachmentDescription{
           .load_op = LoadOp::Clear,
-          .clear_colour = make_floats(1.0F),
+          .clear_colour = std::array{ 1.0F, 1.0F, 1.0F, 1.0F },
         }, }, },
-      { .color = { Framebuffer::AttachmentDesc{
+      { .color = { Framebuffer::AttachmentDescription{
           .texture = vulkan_context->get_current_swapchain_texture(), }, },
-         });
+         }, {});
     buf.cmd_end_rendering();
-    auto result = vulkan_context->submit(
+    const auto result = vulkan_context->submit(
       buf, vulkan_context->get_current_swapchain_texture());
     if (!result) {
       std::cerr << "Failed to submit command buffer." << std::endl;

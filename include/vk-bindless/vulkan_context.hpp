@@ -140,6 +140,15 @@ private:
   bool has_swapchain_maintenance_1{ false };
 
   std::deque<PreFrameCallback> pre_frame_callbacks{};
+  auto process_callbacks() -> void
+  {
+    while (!pre_frame_callbacks.empty()) {
+      auto callback = std::move(pre_frame_callbacks.front());
+      VkAllocationCallbacks* allocation_callbacks = nullptr;
+      pre_frame_callbacks.pop_front();
+      callback(vkb_device.device, allocation_callbacks);
+    }
+  }
 
   static auto get_dsl_binding(std::uint32_t, VkDescriptorType, uint32_t)
     -> VkDescriptorSetLayoutBinding;

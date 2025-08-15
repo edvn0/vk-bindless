@@ -41,8 +41,7 @@ create_timeline_semaphore(VkDevice device, std::uint64_t initial_value)
   };
   VkSemaphore semaphore = VK_NULL_HANDLE;
   VK_VERIFY(vkCreateSemaphore(device, &ci, nullptr, &semaphore));
-  // VK_ASSERT(set_debug_object_name(device, VK_OBJECT_TYPE_SEMAPHORE,
-  // (uint64_t)semaphore, debugName));
+  set_name_for_object(device, VK_OBJECT_TYPE_SEMAPHORE, semaphore, "Timeline Semaphore");
   return semaphore;
 }
 
@@ -60,11 +59,7 @@ Context::~Context()
   destroy(dummy_texture);
   destroy(dummy_sampler);
 
-  while (!pre_frame_callbacks.empty()) {
-    auto callback = std::move(pre_frame_callbacks.front());
-    pre_frame_callbacks.pop_front();
-    callback(vkb_device.device, nullptr);
-  }
+  process_callbacks();
 
   // Destroy all resources
   texture_pool.clear();
@@ -123,7 +118,6 @@ logger(VkDebugUtilsMessageSeverityFlagBitsEXT,
        const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
        void*) -> VkBool32
 {
-#define IS_DEBUG
 #ifdef IS_DEBUG
   std::cout << std::string{ callbackData->pMessage } << '\n';
   return VK_FALSE;
@@ -165,9 +159,14 @@ auto
 Context::create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
   -> Expected<std::unique_ptr<IContext>, ContextError>
 {
+#if IS_DEBUG
+  constexpr auto request_validation = true;
+#else
+  constexpr auto request_validation = false;
+#endif
   vkb::InstanceBuilder builder;
   auto inst_ret = builder.set_app_name("Bindless Vulkan")
-                    .request_validation_layers()
+                    .request_validation_layers(request_validation)
                     .set_debug_callback(&logger)
                     .require_api_version(1, 4, 0)
                     .build();
@@ -274,7 +273,7 @@ Context::create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
     VK_FORMAT_D16_UNORM,
   };
   for (const auto& depth_format : depth_formats) {
-    VkFormatProperties format_properties;
+    VkFormatProperties format_properties{};
     vkGetPhysicalDeviceFormatProperties(
       vkb_physical.physical_device, depth_format, &format_properties);
 
@@ -283,25 +282,25 @@ Context::create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
     }
   }
 
-  uint32_t formatCount;
+  std::uint32_t format_count;
   vkGetPhysicalDeviceSurfaceFormatsKHR(
-    vkb_physical.physical_device, surf, &formatCount, nullptr);
+    vkb_physical.physical_device, surf, &format_count, nullptr);
 
-  if (formatCount) {
-    device_formats.resize(formatCount);
+  if (format_count) {
+    device_formats.resize(format_count);
     vkGetPhysicalDeviceSurfaceFormatsKHR(
-      vkb_physical.physical_device, surf, &formatCount, device_formats.data());
+      vkb_physical.physical_device, surf, &format_count, device_formats.data());
   }
 
-  uint32_t presentModeCount;
+  std::uint32_t present_mode_count{};
   vkGetPhysicalDeviceSurfacePresentModesKHR(
-    vkb_physical.physical_device, surf, &presentModeCount, nullptr);
+    vkb_physical.physical_device, surf, &present_mode_count, nullptr);
 
-  if (presentModeCount) {
-    device_present_modes.resize(presentModeCount);
+  if (present_mode_count) {
+    device_present_modes.resize(present_mode_count);
     vkGetPhysicalDeviceSurfacePresentModesKHR(vkb_physical.physical_device,
                                               surf,
-                                              &presentModeCount,
+                                              &present_mode_count,
                                               device_present_modes.data());
   }
 
@@ -359,9 +358,13 @@ Context::create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
   }
 
   context->swapchain =
-    Unique<Swapchain>{ new Swapchain{ *context, 1920U, 1080U } };
-  context->timeline_semaphore = create_timeline_semaphore(
-    vkb_device.device, context->swapchain->swapchain_image_count() - 1);
+    !is_headless ? Unique<Swapchain>{ new Swapchain{ *context, 1920U, 1080U } }
+                 : VK_NULL_HANDLE;
+  context->timeline_semaphore =
+    context->swapchain
+      ? create_timeline_semaphore(
+          vkb_device.device, context->swapchain->swapchain_image_count() - 1)
+      : VK_NULL_HANDLE;
 
   context->create_placeholder_resources();
   context->update_resource_bindings();
@@ -867,15 +870,9 @@ Context::submit(ICommandBuffer& commandBuffer, TextureHandle present)
     }
   }
 
-  [&] {
-    while (!pre_frame_callbacks.empty()) {
-      auto& front = pre_frame_callbacks.front();
-      front(vkb_device.device, nullptr);
-      pre_frame_callbacks.pop_front();
-    }
-  }();
+  process_callbacks();
 
-  SubmitHandle handle = command_buffer.last_submit_handle;
+  auto handle = command_buffer.last_submit_handle;
 
   command_buffer = {};
 

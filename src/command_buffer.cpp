@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <iostream>
 
 namespace VkBindless {
 
@@ -141,11 +142,13 @@ CommandBuffer::cmd_begin_rendering(const RenderPass& render_pass,
 
   const std::uint32_t framebuffer_colour_attachment_count =
     fb.get_colour_attachment_count();
+#if !NDEBUG
   const std::uint32_t render_pass_colour_attachment_count =
     render_pass.get_colour_attachment_count();
 
   assert(render_pass_colour_attachment_count ==
          framebuffer_colour_attachment_count);
+#endif
 
   framebuffer = fb;
 
@@ -234,6 +237,7 @@ CommandBuffer::cmd_begin_rendering(const RenderPass& render_pass,
     };
     set_clear_colour(colour_attachments.at(i).clearValue.color,
                      desc_color.clear_colour);
+
     if (desc_color.store_op == StoreOp::MsaaResolve) {
       assert(samples > 1);
       assert(!attachment.resolve_texture.empty() &&
@@ -305,7 +309,7 @@ CommandBuffer::cmd_begin_rendering(const RenderPass& render_pass,
   const std::uint32_t height = std::max(framebuffer_height >> mip_level, 1u);
   const Viewport viewport = {
     0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height),
-    0.0f, +1.0f
+    1.0f, 0.0f,
   };
   const ScissorRect scissor = { 0, 0, width, height };
 
@@ -316,11 +320,11 @@ CommandBuffer::cmd_begin_rendering(const RenderPass& render_pass,
     .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
     .pNext = nullptr,
     .flags = 0,
-    .renderArea = { VkOffset2D{ static_cast<std::int32_t>(scissor.x),
+    .renderArea = { { static_cast<std::int32_t>(scissor.x),
                                 static_cast<std::int32_t>(scissor.y), },
-                    VkExtent2D{ scissor.width, scissor.height, }, },
+                    { scissor.width, scissor.height, }, },
     .layerCount = render_pass.layer_count,
-    .viewMask = render_pass.view_mask,
+    .viewMask = view_mask,
     .colorAttachmentCount = framebuffer_colour_attachment_count,
     .pColorAttachments = colour_attachments.data(),
     .pDepthAttachment = depth_texture ? &depth_attachment : nullptr,
@@ -342,11 +346,9 @@ CommandBuffer::cmd_begin_rendering(const RenderPass& render_pass,
                     .extent = { scissor.width, scissor.height, }, };
   vkCmdSetScissor(wrapper->command_buffer, 0, 1, &rect);
 
-  if (context->needs_update()) {
-    context->update_resource_bindings();
-  }
+  context->update_resource_bindings();
 
-  vkCmdSetDepthCompareOp(wrapper->command_buffer, VK_COMPARE_OP_ALWAYS);
+  vkCmdSetDepthCompareOp(wrapper->command_buffer, VK_COMPARE_OP_NEVER);
   vkCmdSetDepthBiasEnable(wrapper->command_buffer, VK_FALSE);
 
   vkCmdBeginRendering(wrapper->command_buffer, &rendering_info);

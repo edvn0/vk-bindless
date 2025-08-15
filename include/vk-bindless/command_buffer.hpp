@@ -190,7 +190,7 @@ using ClearColourValue = std::variant<std::array<float, 4>,
 
 struct RenderPass final
 {
-  struct AttachmentDesc final
+  struct AttachmentDescription final
   {
     LoadOp load_op = LoadOp::Invalid;
     StoreOp store_op = StoreOp::Store;
@@ -203,12 +203,12 @@ struct RenderPass final
     uint32_t clear_stencil = 0;
   };
 
-  std::array<AttachmentDesc, max_colour_attachments> color{};
-  AttachmentDesc depth = {
+  std::array<AttachmentDescription, max_colour_attachments> color{};
+  AttachmentDescription depth = {
     .load_op = LoadOp::DontCare,
     .store_op = StoreOp::DontCare,
   };
-  AttachmentDesc stencil = {
+  AttachmentDescription stencil = {
     .load_op = LoadOp::Invalid,
     .store_op = StoreOp::DontCare,
   };
@@ -228,14 +228,14 @@ struct RenderPass final
 
 struct Framebuffer final
 {
-  struct AttachmentDesc
+  struct AttachmentDescription
   {
     TextureHandle texture{};
     TextureHandle resolve_texture{};
   };
 
-  std::array<AttachmentDesc, max_colour_attachments> color{};
-  AttachmentDesc depth_stencil{};
+  std::array<AttachmentDescription, max_colour_attachments> color{};
+  AttachmentDescription depth_stencil{};
 
   std::string debug_name = "";
 
@@ -323,7 +323,7 @@ public:
 */
   virtual auto cmd_begin_rendering(const RenderPass& render_pass,
                                    const Framebuffer& framebuffer,
-                                   const Dependencies& deps = {}) -> void = 0;
+                                   const Dependencies& deps) -> void = 0;
   virtual auto cmd_end_rendering() -> void = 0;
   /*
       virtual auto cmd_bind_viewport(const Viewport &viewport) -> void = 0;
@@ -432,14 +432,14 @@ class CommandBuffer final : public ICommandBuffer
 
 public:
   CommandBuffer() = default;
-  CommandBuffer(IContext&);
+  explicit CommandBuffer(IContext&);
   ~CommandBuffer() override;
 
-  auto get_command_buffer() const { return wrapper->command_buffer; }
+  [[nodiscard]] auto get_command_buffer() const { return wrapper->command_buffer; }
 
   auto cmd_begin_rendering(const RenderPass& render_pass,
                            const Framebuffer& framebuffer,
-                           const Dependencies& deps = empty_deps)
+                           const Dependencies& deps)
     -> void override;
   auto cmd_end_rendering() -> void override;
 

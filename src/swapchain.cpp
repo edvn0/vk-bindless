@@ -13,7 +13,7 @@ namespace {
 auto
 choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR>& formats,
                            ColorSpace requestedColorSpace,
-                           bool hasSwapchainColorspaceExt)
+                           bool has_swapchain_ext)
 {
 
   auto is_native_swapchain_bgr =
@@ -36,39 +36,38 @@ choose_swap_surface_format(const std::vector<VkSurfaceFormatKHR>& formats,
     return false;
   };
 
-  auto colorSpaceToVkSurfaceFormat =
+  auto colour_space_to_vk_surface_format =
     [](ColorSpace colorSpace,
-       bool isBGR,
-       bool hasSwapchainColorspaceExt) -> VkSurfaceFormatKHR {
+       bool is_bgr,
+       bool has_swapchain_ext) -> VkSurfaceFormatKHR {
     switch (colorSpace) {
       case ColorSpace::SRGB_NONLINEAR:
-        return VkSurfaceFormatKHR{ isBGR ? VK_FORMAT_B8G8R8A8_UNORM
-                                         : VK_FORMAT_R8G8B8A8_UNORM,
+        return VkSurfaceFormatKHR{ is_bgr ? VK_FORMAT_B8G8R8A8_UNORM
+                                          : VK_FORMAT_R8G8B8A8_UNORM,
                                    VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
       case ColorSpace::SRGB_EXTENDED_LINEAR:
-        if (hasSwapchainColorspaceExt)
+        if (has_swapchain_ext)
           return VkSurfaceFormatKHR{ VK_FORMAT_R16G16B16A16_SFLOAT,
                                      VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT };
         [[fallthrough]];
       case ColorSpace::HDR10:
-        if (hasSwapchainColorspaceExt) {
-          return VkSurfaceFormatKHR{ isBGR ? VK_FORMAT_A2B10G10R10_UNORM_PACK32
-                                           : VK_FORMAT_A2R10G10B10_UNORM_PACK32,
+        if (has_swapchain_ext) {
+          return VkSurfaceFormatKHR{ is_bgr
+                                       ? VK_FORMAT_A2B10G10R10_UNORM_PACK32
+                                       : VK_FORMAT_A2R10G10B10_UNORM_PACK32,
                                      VK_COLOR_SPACE_HDR10_ST2084_EXT };
         }
         [[fallthrough]];
       default:
         // default to normal sRGB non linear.
-        return VkSurfaceFormatKHR{ isBGR ? VK_FORMAT_B8G8R8A8_SRGB
-                                         : VK_FORMAT_R8G8B8A8_SRGB,
+        return VkSurfaceFormatKHR{ is_bgr ? VK_FORMAT_B8G8R8A8_SRGB
+                                          : VK_FORMAT_R8G8B8A8_SRGB,
                                    VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
     }
   };
 
-  const VkSurfaceFormatKHR preferred =
-    colorSpaceToVkSurfaceFormat(requestedColorSpace,
-                                is_native_swapchain_bgr(formats),
-                                hasSwapchainColorspaceExt);
+  const VkSurfaceFormatKHR preferred = colour_space_to_vk_surface_format(
+    requestedColorSpace, is_native_swapchain_bgr(formats), has_swapchain_ext);
 
   for (const VkSurfaceFormatKHR& fmt : formats) {
     if (fmt.format == preferred.format &&
