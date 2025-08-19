@@ -26,7 +26,7 @@ add_library(CustomVMA STATIC src/vma_allocator_impl.cpp)
 target_include_directories(CustomVMA PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${CMAKE_SOURCE_DIR}/third-party/VulkanMemoryAllocator/include ${Vulkan_INCLUDE_DIRS})
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     # -Wmissing-field-initializers,-Wunused-parameter
-    target_compile_options(CustomVMA PRIVATE -Wmissing-field-initializers -Wunused-parameter)
+    target_compile_options(CustomVMA PRIVATE -Wno-missing-field-initializers -Wno-unused-parameter)
 endif ()
 if (HAS_STD_EXPECTED)
     target_compile_definitions(CustomVMA PUBLIC HAS_STD_EXPECTED)
