@@ -27,35 +27,34 @@ target_include_directories(CustomVMA PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include 
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     # -Wmissing-field-initializers,-Wunused-parameter
     target_compile_options(CustomVMA PRIVATE -Wmissing-field-initializers -Wunused-parameter)
-endif()
+endif ()
 if (HAS_STD_EXPECTED)
     target_compile_definitions(CustomVMA PUBLIC HAS_STD_EXPECTED)
-else()
+else ()
     target_include_directories(CustomVMA PUBLIC ${CMAKE_SOURCE_DIR}/third-party/expected/include)
-endif()
+endif ()
 
 
-
-add_library(${PROJECT_NAME} STATIC src/graphics_context.cpp src/vulkan_context.cpp src/texture.cpp src/types.cpp src/commands.cpp src/command_buffer.cpp src/swapchain.cpp)
+add_library(${PROJECT_NAME} STATIC src/graphics_context.cpp src/vulkan_context.cpp src/texture.cpp src/types.cpp src/commands.cpp src/command_buffer.cpp src/swapchain.cpp src/event_system.cpp)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${CMAKE_SOURCE_DIR}/third-party/VulkanMemoryAllocator/include)
-target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan vk-bootstrap CustomVMA)
+target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan vk-bootstrap CustomVMA glfw)
 target_include_directories(${PROJECT_NAME} PUBLIC ${Vulkan_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/third-party/vk-bootstrap/src)
 target_compile_definitions(${PROJECT_NAME} PRIVATE $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:IS_DEBUG>)
 
 if (HAS_STD_EXPECTED)
     target_compile_definitions(${PROJECT_NAME} PUBLIC HAS_STD_EXPECTED)
-else()
+else ()
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_SOURCE_DIR}/third-party/expected/include)
-endif()
+endif ()
 
-if(ENABLE_TESTING)
+if (ENABLE_TESTING)
     enable_testing()
 
     add_executable(test_vk_bindless test/main.cpp test/integration_tests.cpp)
     target_link_libraries(test_vk_bindless VkBindless::VkBindless doctest Vulkan::Vulkan vk-bootstrap glfw)
 
     add_test(NAME test_vk_bindless COMMAND test_vk_bindless)
-endif()
+endif ()
 
 add_library(VkBindless::VkBindless ALIAS VkBindless)
 
@@ -63,13 +62,13 @@ if (MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /W4 /WX)
     if (ENABLE_TESTING)
         target_compile_options(test_vk_bindless PRIVATE /W4 /WX)
-    endif()    
+    endif ()
 elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     set(COMPILE_FLAGS "-Wall;-Wextra;-Wpedantic;-Werror;-Wno-nullability-completeness;-Wno-nullability-extension")
     target_compile_options(${PROJECT_NAME} PRIVATE ${COMPILE_FLAGS})
     if (ENABLE_TESTING)
         target_compile_options(test_vk_bindless PRIVATE ${COMPILE_FLAGS})
-    endif()
-endif()
+    endif ()
+endif ()
 
 add_subdirectory(client)

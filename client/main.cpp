@@ -1,7 +1,8 @@
+#include "vk-bindless/event_system.hpp"
 #include "vk-bindless/transitions.hpp"
 #include "vk-bindless/vulkan_context.hpp"
 
-#define GLFW_INCLUDE_NONE
+#define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
 #include <bit>
@@ -27,7 +28,8 @@ struct WindowState
   bool fullscreen{ false };
 };
 
-template<typename T> requires std::is_pointer_v<T>
+template<typename T>
+  requires std::is_pointer_v<T>
 static auto
 launder_cast(const void* ptr)
 {
@@ -41,46 +43,195 @@ is_wayland() -> bool
   return platform == GLFW_PLATFORM_WAYLAND;
 }
 
-void
-key_callback(GLFWwindow* win, int key, int, int action, int, void* user_data)
+class WindowManager final
+  : public EventSystem::TypedEventHandler<EventSystem::KeyEvent,
+                                          EventSystem::WindowResizeEvent>
 {
-  if (action != GLFW_PRESS)
-    return;
-  const auto state = launder_cast<WindowState*>(user_data);
+  GLFWwindow* window;
+  WindowState* window_state;
 
-  if (key == GLFW_KEY_ESCAPE) {
-    glfwSetWindowShouldClose(win, GLFW_TRUE);
-    return;
+public:
+  WindowManager(GLFWwindow* w, WindowState* state)
+    : window(w)
+    , window_state(state)
+  {
   }
 
-  if (key == GLFW_KEY_F11) {
+  [[nodiscard]] auto get_priority() const -> int override { return 1000; }
+
+protected:
+  bool handle_event(const EventSystem::KeyEvent& event) override
+  {
+    if (event.action != GLFW_PRESS)
+      return false;
+
+    if (event.key == GLFW_KEY_ESCAPE) {
+      glfwSetWindowShouldClose(window, GLFW_TRUE);
+      return true; // Consume escape key
+    }
+
+    if (event.key == GLFW_KEY_F11) {
+      toggle_fullscreen();
+      return true; // Consume F11
+    }
+
+    return false;
+  }
+
+  bool handle_event(const EventSystem::WindowResizeEvent& event) override
+  {
+    // Handle window resize if needed
+    std::cout << std::format(
+      "Window resized to {}x{}\n", event.width, event.height);
+    return false; // Don't consume resize events
+  }
+
+private:
+  auto toggle_fullscreen() -> void
+  {
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
 
-    if (!state->fullscreen) {
+    if (!window_state->fullscreen) {
       if (!is_wayland()) {
-        glfwGetWindowPos(win, &state->windowed_x, &state->windowed_y);
+        glfwGetWindowPos(
+          window, &window_state->windowed_x, &window_state->windowed_y);
       }
-      glfwGetWindowSize(win, &state->windowed_width, &state->windowed_height);
+      glfwGetWindowSize(
+        window, &window_state->windowed_width, &window_state->windowed_height);
       glfwSetWindowMonitor(
-        win, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
-      state->fullscreen = true;
+        window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+      window_state->fullscreen = true;
     } else {
       if (is_wayland()) {
-        glfwSetWindowMonitor(
-          win, nullptr, 0, 0, state->windowed_width, state->windowed_height, 0);
-      } else {
-        glfwSetWindowMonitor(win,
+        glfwSetWindowMonitor(window,
                              nullptr,
-                             state->windowed_x,
-                             state->windowed_y,
-                             state->windowed_width,
-                             state->windowed_height,
+                             0,
+                             0,
+                             window_state->windowed_width,
+                             window_state->windowed_height,
+                             0);
+      } else {
+        glfwSetWindowMonitor(window,
+                             nullptr,
+                             window_state->windowed_x,
+                             window_state->windowed_y,
+                             window_state->windowed_width,
+                             window_state->windowed_height,
                              0);
       }
-      state->fullscreen = false;
+      window_state->fullscreen = false;
     }
   }
+};
+
+// Example game logic handler
+class GameLogicHandler : public EventSystem::EventHandler
+{
+public:
+  [[nodiscard]] auto get_priority() const -> int override { return 100; }
+
+protected:
+  bool handle_event(const EventSystem::KeyEvent& event) override
+  {
+    if (event.action == GLFW_PRESS) {
+      if (event.key == GLFW_KEY_W) {
+        std::cout << "Move forward\n";
+        return false; // Don't consume, other systems might want this
+      }
+      if (event.key == GLFW_KEY_SPACE) {
+        std::cout << "Jump action\n";
+        return true; // Consume space key
+      }
+    }
+    return false;
+  }
+
+  bool handle_event(const EventSystem::MouseButtonEvent& event) override
+  {
+    if (event.action == GLFW_PRESS && event.button == GLFW_MOUSE_BUTTON_LEFT) {
+      std::cout << "Primary action (shoot/interact)\n";
+      return true; // Consume left click
+    }
+    return false;
+  }
+
+  bool handle_event(const EventSystem::MouseMoveEvent& event) override
+  {
+    // Handle camera movement
+    if (std::abs(event.delta_x) > 0.1 || std::abs(event.delta_y) > 0.1) {
+      std::cout << std::format(
+        "Camera delta: {:.2f}, {:.2f}\n", event.delta_x, event.delta_y);
+    }
+    return false; // Don't consume mouse movement
+  }
+};
+
+// UI handler (lower priority than game logic)
+class UIHandler
+  : public EventSystem::TypedEventHandler<EventSystem::KeyEvent,
+                                          EventSystem::MouseButtonEvent>
+{
+public:
+  [[nodiscard]] auto get_priority() const -> int override { return 50; }
+
+protected:
+  bool handle_event(const EventSystem::KeyEvent& event) override
+  {
+    if (event.action == GLFW_PRESS) {
+      if (event.key == GLFW_KEY_TAB) {
+        std::cout << "Toggle UI panel\n";
+        return true; // Consume tab key
+      }
+      if (event.key == GLFW_KEY_I) {
+        std::cout << "Open inventory\n";
+        return true; // Consume inventory key
+      }
+    }
+    return false;
+  }
+
+  bool handle_event(const EventSystem::MouseButtonEvent& event) override
+  {
+    if (event.action == GLFW_PRESS && event.button == GLFW_MOUSE_BUTTON_RIGHT) {
+      std::cout << "Context menu\n";
+      return true; // Consume right click for UI
+    }
+    return false;
+  }
+};
+
+static auto
+setup_event_callbacks(GLFWwindow* window,
+                      EventSystem::EventDispatcher* dispatcher) -> void
+{
+  glfwSetWindowUserPointer(window, dispatcher);
+
+  glfwSetKeyCallback(
+    window, [](GLFWwindow* win, int key, int scancode, int action, int mods) {
+      auto* dispatcher = static_cast<EventSystem::EventDispatcher*>(
+        glfwGetWindowUserPointer(win));
+      dispatcher->handle_key_callback(win, key, scancode, action, mods);
+    });
+
+  glfwSetMouseButtonCallback(
+    window, [](GLFWwindow* win, int button, int action, int mods) {
+      auto* dispatcher = static_cast<EventSystem::EventDispatcher*>(
+        glfwGetWindowUserPointer(win));
+      dispatcher->handle_mouse_button_callback(win, button, action, mods);
+    });
+
+  glfwSetCursorPosCallback(window, [](GLFWwindow* win, double x, double y) {
+    auto* dispatcher =
+      static_cast<EventSystem::EventDispatcher*>(glfwGetWindowUserPointer(win));
+    dispatcher->handle_cursor_pos_callback(win, x, y);
+  });
+
+  glfwSetWindowSizeCallback(window, [](GLFWwindow* win, int width, int height) {
+    auto* dispatcher =
+      static_cast<EventSystem::EventDispatcher*>(glfwGetWindowUserPointer(win));
+    dispatcher->handle_window_size_callback(win, width, height);
+  });
 }
 
 template<typename K>
@@ -129,8 +280,8 @@ main() -> std::int32_t
 
   auto context = Context::create([win = window.get()](VkInstance instance) {
     VkSurfaceKHR surface;
-    if (glfwCreateWindowSurface(instance, win, nullptr, &surface) !=
-        VK_SUCCESS) {
+    if (auto res = glfwCreateWindowSurface(instance, win, nullptr, &surface);
+        res != VK_SUCCESS) {
       return as_null(surface);
     }
     return surface;
@@ -139,21 +290,32 @@ main() -> std::int32_t
   auto vulkan_context = std::move(context.value());
 
   glfwSetWindowUserPointer(window.get(), &state);
-  glfwSetKeyCallback(
-    window.get(),
-    [](GLFWwindow* win, const int key,
-                        const int scancode,
-                        const int action,
-                        const int mods) {
-      auto s = launder_cast<WindowState*>(glfwGetWindowUserPointer(win));
-      key_callback(win, key, scancode, action, mods, s);
-    });
 
-   std::int32_t new_width = 0;
+  EventSystem::EventDispatcher event_dispatcher;
+  setup_event_callbacks(window.get(), &event_dispatcher);
+
+  // Create and register event handlers
+  const auto window_manager =
+    std::make_shared<WindowManager>(window.get(), &state);
+  const auto game_handler = std::make_shared<GameLogicHandler>();
+  const auto ui_handler = std::make_shared<UIHandler>();
+
+  // Subscribe handlers to events they care about
+  event_dispatcher.subscribe<EventSystem::KeyEvent>(window_manager);
+  event_dispatcher.subscribe<EventSystem::WindowResizeEvent>(window_manager);
+
+  event_dispatcher.subscribe<EventSystem::KeyEvent>(game_handler);
+  event_dispatcher.subscribe<EventSystem::MouseButtonEvent>(game_handler);
+  event_dispatcher.subscribe<EventSystem::MouseMoveEvent>(game_handler);
+
+  event_dispatcher.subscribe<EventSystem::KeyEvent>(ui_handler);
+
+  std::int32_t new_width = 0;
   std::int32_t new_height = 0;
 
   while (!glfwWindowShouldClose(window.get())) {
-    glfwPollEvents();
+    event_dispatcher.process_events();
+
     glfwGetFramebufferSize(window.get(), &new_width, &new_height);
     if (!new_width || !new_height)
       continue;
@@ -167,14 +329,23 @@ main() -> std::int32_t
 
     auto& buf = vulkan_context->acquire_command_buffer();
 
-    buf.cmd_begin_rendering(
-      { .color = { RenderPass::AttachmentDescription{
-          .load_op = LoadOp::Clear,
-          .clear_colour = std::array{ 1.0F, 1.0F, 1.0F, 1.0F },
-        }, }, },
-      { .color = { Framebuffer::AttachmentDescription{
+    RenderPass render_pass {
+      .color= { RenderPass::AttachmentDescription{
+  .load_op = LoadOp::Clear,
+        .clear_colour = std::array{0.0F, 1.0F, 0.0F, 1.0F},
+      }, },
+      .depth ={},
+      .stencil =  {},
+    .layer_count = 1,
+      .view_mask = 0,
+    };
+    Framebuffer framebuffer{
+      .color = { Framebuffer::AttachmentDescription{
           .texture = vulkan_context->get_current_swapchain_texture(), }, },
-         }, {});
+      .depth_stencil = {},
+      .debug_name = "Main Framebuffer",
+    };
+    buf.cmd_begin_rendering(render_pass, framebuffer, {});
     buf.cmd_end_rendering();
     const auto result = vulkan_context->submit(
       buf, vulkan_context->get_current_swapchain_texture());

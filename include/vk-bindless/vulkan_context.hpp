@@ -38,6 +38,8 @@ set_name_for_object(auto device,
   }
 };
 
+
+
 class Context final : public IContext
 {
 public:
@@ -88,7 +90,7 @@ public:
     -> Expected<SubmitHandle, std::string> override;
   auto get_current_swapchain_texture() -> TextureHandle override;
 
-  auto get_immediate_commands() -> auto& { return *immediate_commands; }
+  [[nodiscard]] auto get_immediate_commands() const -> auto& { return *immediate_commands; }
 
 private:
   vkb::Instance vkb_instance{};

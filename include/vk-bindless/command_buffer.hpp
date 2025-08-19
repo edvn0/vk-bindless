@@ -216,7 +216,7 @@ struct RenderPass final
   std::uint32_t layer_count = 1;
   std::uint32_t view_mask = 0;
 
-  auto get_colour_attachment_count() const
+  [[nodiscard]] auto get_colour_attachment_count() const
   {
     std::uint32_t n = 0;
     while (n < max_colour_attachments && color[n].load_op != LoadOp::Invalid) {
@@ -237,9 +237,9 @@ struct Framebuffer final
   std::array<AttachmentDescription, max_colour_attachments> color{};
   AttachmentDescription depth_stencil{};
 
-  std::string debug_name = "";
+  std::string debug_name{};
 
-  auto get_colour_attachment_count() const
+  [[nodiscard]] auto get_colour_attachment_count() const
   {
     std::uint32_t n = 0;
     while (n < max_colour_attachments && color[n].texture) {
@@ -273,8 +273,8 @@ struct StencilState
   StencilOp depth_failure_operation = StencilOp::Keep;
   StencilOp depth_stencil_pass_operation = StencilOp::Keep;
   CompareOp stencil_compare_op = CompareOp::AlwaysPass;
-  std::uint32_t read_mask = (std::uint32_t)~0;
-  std::uint32_t write_mask = (std::uint32_t)~0;
+  std::uint32_t read_mask = static_cast<std::uint32_t>(~0);
+  std::uint32_t write_mask = static_cast<std::uint32_t>(~0);
 };
 
 struct DepthState

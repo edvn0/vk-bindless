@@ -25,8 +25,8 @@
 namespace VkBindless {
 
 static auto
-create_timeline_semaphore(VkDevice device, std::uint64_t initial_value)
-  -> VkSemaphore
+create_timeline_semaphore(const VkDevice device,
+                          const std::uint64_t initial_value) -> VkSemaphore
 {
   const VkSemaphoreTypeCreateInfo semaphoreTypeCreateInfo = {
     .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
@@ -41,7 +41,8 @@ create_timeline_semaphore(VkDevice device, std::uint64_t initial_value)
   };
   VkSemaphore semaphore = VK_NULL_HANDLE;
   VK_VERIFY(vkCreateSemaphore(device, &ci, nullptr, &semaphore));
-  set_name_for_object(device, VK_OBJECT_TYPE_SEMAPHORE, semaphore, "Timeline Semaphore");
+  set_name_for_object(
+    device, VK_OBJECT_TYPE_SEMAPHORE, semaphore, "Timeline Semaphore");
   return semaphore;
 }
 
@@ -77,10 +78,10 @@ struct LockFreeQueue
 
   auto push(Message&& msg)
   {
-    std::size_t t = tail.load(std::memory_order_relaxed);
-    std::size_t next = (t + 1) % QUEUE_SIZE;
+    auto t = tail.load(std::memory_order_relaxed);
+    const auto next = (t + 1) % QUEUE_SIZE;
     if (next == head.load(std::memory_order_acquire)) {
-      return false; // queue full
+      return false;
     }
     buffer[t] = std::move(msg);
     tail.store(next, std::memory_order_release);
@@ -89,7 +90,7 @@ struct LockFreeQueue
 
   auto pop(Message& out)
   {
-    std::size_t h = head.load(std::memory_order_relaxed);
+    const auto h = head.load(std::memory_order_relaxed);
     if (h == tail.load(std::memory_order_acquire)) {
       return false; // empty
     }
@@ -101,16 +102,18 @@ struct LockFreeQueue
 
 static LockFreeQueue messages;
 
-static std::jthread thread{ [](std::stop_token stoken) {
-  std::string msg;
-  while (!stoken.stop_requested()) {
-    while (messages.pop(msg)) {
-      std::cout << "[VK] " << msg << "\n";
+static std::jthread thread{
+  [](const std::stop_token& stoken) {
+    std::string msg;
+    while (!stoken.stop_requested()) {
+      while (messages.pop(msg)) {
+        std::cout << "[VK] " << msg << "\n";
+      }
+      std::flush(std::cout);
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
-    std::flush(std::cout);
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
-} };
+  },
+};
 
 static auto
 logger(VkDebugUtilsMessageSeverityFlagBitsEXT,
@@ -267,7 +270,7 @@ Context::create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
   std::vector<VkFormat> device_depth_formats;
   std::vector<VkPresentModeKHR> device_present_modes;
 
-  const std::array depth_formats = {
+  constexpr std::array depth_formats = {
     VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT,
     VK_FORMAT_D16_UNORM_S8_UINT,  VK_FORMAT_D32_SFLOAT,
     VK_FORMAT_D16_UNORM,
@@ -760,7 +763,7 @@ Context::update_descriptor_sets() -> Expected<void, ContextError>
 auto
 Context::create_placeholder_resources() -> void
 {
-  const std::array<const std::uint8_t, 4> dummy_white_texture = {
+  constexpr std::array<const std::uint8_t, 4> dummy_white_texture = {
     255,
     255,
     255,
@@ -812,7 +815,7 @@ Context::get_allocator_implementation() -> IAllocator&
 }
 
 auto
-Context::resize_swapchain(std::uint32_t width, std::uint32_t height) -> void
+Context::resize_swapchain(const std::uint32_t width, const std::uint32_t height) -> void
 {
   if (swapchain) {
     swapchain->resize(width, height);
@@ -863,7 +866,7 @@ Context::submit(ICommandBuffer& cmd_buffer, const TextureHandle present)
     immediate_commands->submit(*command_buffer.wrapper);
 
   if (should_present) {
-    auto could =
+    const auto could =
       swapchain->present(immediate_commands->acquire_last_submit_semaphore());
     if (!could) {
       return unexpected<std::string>("Failed to present swapchain");
@@ -888,7 +891,7 @@ Context::get_current_swapchain_texture() -> TextureHandle
 #pragma region Destroyers
 
 auto
-Context::destroy(TextureHandle handle) -> void
+Context::destroy(const TextureHandle handle) -> void
 {
   SCOPE_EXIT
   {
@@ -968,7 +971,7 @@ Context::destroy(GraphicsPipelineHandle) -> void
 }
 
 auto
-Context::destroy(SamplerHandle handle) -> void
+Context::destroy(const SamplerHandle handle) -> void
 {
   if (!handle.valid()) {
     return;

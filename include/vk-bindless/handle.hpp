@@ -8,7 +8,7 @@ namespace VkBindless {
 
 static constexpr std::uint32_t invalid_generation = 0U;
 
-template <typename T> class Handle final {
+template <typename> class Handle final {
   Handle(const std::uint32_t index, const std::uint32_t generation)
       : handle_index(index), handle_generation(generation) {}
 

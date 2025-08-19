@@ -142,13 +142,6 @@ CommandBuffer::cmd_begin_rendering(const RenderPass& render_pass,
 
   const std::uint32_t framebuffer_colour_attachment_count =
     fb.get_colour_attachment_count();
-#if IS_DEBUG
-  const std::uint32_t render_pass_colour_attachment_count =
-    render_pass.get_colour_attachment_count();
-
-  assert(render_pass_colour_attachment_count ==
-         framebuffer_colour_attachment_count);
-#endif
 
   framebuffer = fb;
 
@@ -348,7 +341,13 @@ CommandBuffer::cmd_begin_rendering(const RenderPass& render_pass,
 
   context->update_resource_bindings();
 
-  vkCmdSetDepthCompareOp(wrapper->command_buffer, VK_COMPARE_OP_NEVER);
+  vkCmdSetDepthTestEnable(wrapper->command_buffer, fb.depth_stencil.texture ? VK_TRUE : VK_FALSE);
+  if (fb.depth_stencil.texture) {
+    vkCmdSetDepthCompareOp(wrapper->command_buffer, VK_COMPARE_OP_LESS); // or your desired compare op
+    vkCmdSetDepthWriteEnable(wrapper->command_buffer, VK_TRUE);
+  } else {
+    vkCmdSetDepthTestEnable(wrapper->command_buffer, VK_FALSE);
+  }
   vkCmdSetDepthBiasEnable(wrapper->command_buffer, VK_FALSE);
 
   vkCmdBeginRendering(wrapper->command_buffer, &rendering_info);
