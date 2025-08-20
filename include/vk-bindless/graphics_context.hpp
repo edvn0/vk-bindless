@@ -4,7 +4,9 @@
 #include "vk-bindless/expected.hpp"
 #include "vk-bindless/forward.hpp"
 #include "vk-bindless/handle.hpp"
+#include "vk-bindless/shader.hpp"
 #include "vk-bindless/texture.hpp"
+
 
 #include <deque>
 #include <functional>
@@ -67,7 +69,7 @@ using TexturePool = Pool<Texture, VkTexture>;
 using SamplerPool = Pool<Sampler, VkSampler>;
 using ComputePipelinePool = Pool<ComputePipeline, VkComputePipeline>;
 using GraphicsPipelinePool = Pool<GraphicsPipeline, VkGraphicsPipeline>;
-using ShaderModulePool = Pool<ShaderModule, VkShaderModule>;
+using ShaderModulePool = Pool<ShaderModule, VkShader>;
 
 struct IContext
 {

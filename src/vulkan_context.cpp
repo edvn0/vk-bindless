@@ -1000,9 +1000,25 @@ Context::destroy(const SamplerHandle handle) -> void
 }
 
 auto
-Context::destroy(ShaderModuleHandle) -> void
+Context::destroy(ShaderModuleHandle handle) -> void
 {
-  TODO("Implement shader module destruction");
+  if (!handle.valid()) {
+    return;
+  }
+
+  const auto maybe_shader = get_shader_module_pool().get(handle);
+  if (!maybe_shader.has_value()) {
+    return;
+  }
+
+  auto shader = *maybe_shader.value();
+
+  for (const auto& module : shader.get_modules()) {
+    pre_frame_task(
+      [m = module.module](auto device, auto* allocation_callbacks) {
+        vkDestroyShaderModule(device, m, allocation_callbacks);
+      });
+  }
 }
 
 #pragma endregion Destroyers

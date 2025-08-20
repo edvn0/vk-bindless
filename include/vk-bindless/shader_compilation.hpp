@@ -1,3 +1,4 @@
+#include "glslang/Include/glslang_c_shader_types.h"
 #include <expected>
 #include <regex>
 #include <sstream>
@@ -5,6 +6,8 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
+
+#include <glslang/Include/glslang_c_interface.h>
 
 namespace VkBindless {
 
@@ -224,6 +227,8 @@ public:
     return result;
   }
 
+  static auto prepend_preamble(ParsedShader& parsed) -> bool;
+
 private:
   static auto trim_string(const std::string& str) -> std::string
   {
@@ -235,6 +240,13 @@ private:
     return str.substr(start, end - start + 1);
   }
 };
+
+auto
+compile_shader(glslang_stage_t stage,
+               const std::string& source_code,
+               std::vector<std::uint8_t>& output,
+               const glslang_resource_t* resources = nullptr)
+  -> std::expected<void, std::string>;
 
 // Utility functions for working with parsed shaders
 namespace ShaderUtils {

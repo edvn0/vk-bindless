@@ -1,4 +1,5 @@
 #include "vk-bindless/event_system.hpp"
+#include "vk-bindless/shader.hpp"
 #include "vk-bindless/transitions.hpp"
 #include "vk-bindless/vulkan_context.hpp"
 #include "vulkan/vulkan_core.h"
@@ -311,6 +312,12 @@ main() -> std::int32_t
 
   std::int32_t new_width = 0;
   std::int32_t new_height = 0;
+
+  auto shader_handle =
+    VkShader::create(vulkan_context.get(), "assets/shaders/cube.shader")
+      .release();
+
+  (void)shader_handle; // Suppress unused variable warning
 
   while (!glfwWindowShouldClose(window.get())) {
     event_dispatcher.process_events();

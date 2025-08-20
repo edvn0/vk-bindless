@@ -159,24 +159,6 @@ enum class ResolveMode : std::uint8_t
   Max,
 };
 
-enum class ShaderStage : std::uint8_t
-{
-  Vert,
-  Tesc,
-  Tese,
-  Geom,
-  Frag,
-  Comp,
-  Task,
-  Mesh,
-  RayGen,
-  AnyHit,
-  ClosestHit,
-  Miss,
-  Intersection,
-  Callable,
-};
-
 struct Dependencies
 {
   static constexpr auto max_dependencies = 4U;
