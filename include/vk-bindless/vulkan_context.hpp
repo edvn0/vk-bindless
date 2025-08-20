@@ -38,8 +38,6 @@ set_name_for_object(auto device,
   }
 };
 
-
-
 class Context final : public IContext
 {
 public:
@@ -84,13 +82,28 @@ public:
 
   auto get_texture_pool() -> TexturePool& override { return texture_pool; }
   auto get_sampler_pool() -> SamplerPool& override { return sampler_pool; }
+  auto get_compute_pipeline_pool() -> ComputePipelinePool& override
+  {
+    return compute_pipeline_pool;
+  }
+  auto get_graphics_pipeline_pool() -> GraphicsPipelinePool& override
+  {
+    return graphics_pipeline_pool;
+  }
+  auto get_shader_module_pool() -> ShaderModulePool& override
+  {
+    return shader_module_pool;
+  }
 
   auto acquire_command_buffer() -> ICommandBuffer& override;
   auto submit(ICommandBuffer& cmd_buffer, TextureHandle present)
     -> Expected<SubmitHandle, std::string> override;
   auto get_current_swapchain_texture() -> TextureHandle override;
 
-  [[nodiscard]] auto get_immediate_commands() const -> auto& { return *immediate_commands; }
+  [[nodiscard]] auto get_immediate_commands() const -> auto&
+  {
+    return *immediate_commands;
+  }
 
 private:
   vkb::Instance vkb_instance{};
@@ -110,6 +123,9 @@ private:
 
   TexturePool texture_pool{};
   SamplerPool sampler_pool{};
+  ComputePipelinePool compute_pipeline_pool{};
+  GraphicsPipelinePool graphics_pipeline_pool{};
+  ShaderModulePool shader_module_pool{};
 
   std::uint32_t current_max_textures{ 16 };
   std::uint32_t current_max_samplers{ 16 };

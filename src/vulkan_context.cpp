@@ -499,7 +499,9 @@ Context::update_resource_bindings()
   const auto* realised_image = texture_pool.get(dummy_texture).value();
   const auto& dummy_image_view = realised_image->get_image_view();
 
-  for (const auto& object : texture_pool) {
+  texture_pool.for_each_valid([v = dummy_image_view,
+                               &imgs = sampled_images,
+                               &storgs = storage_images](const auto& object) {
     const auto& view = object.get_image_view();
     const auto& storage_view = object.get_storage_image_view()
                                  ? object.get_storage_image_view()
@@ -511,25 +513,24 @@ Context::update_resource_bindings()
     const auto is_sampled = object.is_sampled() && is_available;
     const auto is_storage = object.is_storage() && is_available;
 
-    sampled_images.emplace_back(VK_NULL_HANDLE,
-                                is_sampled ? view : dummy_image_view,
-                                VK_IMAGE_LAYOUT_GENERAL);
+    imgs.emplace_back(
+      VK_NULL_HANDLE, is_sampled ? view : v, VK_IMAGE_LAYOUT_GENERAL);
 
-    storage_images.emplace_back(VK_NULL_HANDLE,
-                                is_storage ? storage_view : dummy_image_view,
-                                VK_IMAGE_LAYOUT_GENERAL);
-  }
+    storgs.emplace_back(
+      VK_NULL_HANDLE, is_storage ? storage_view : v, VK_IMAGE_LAYOUT_GENERAL);
+  });
 
   std::vector<VkDescriptorImageInfo> sampler_infos;
   sampler_infos.reserve(sampler_pool.size());
 
   auto realised_sampler = *sampler_pool.get(dummy_sampler).value();
 
-  for (const auto& object : sampler_pool) {
-    sampler_infos.emplace_back(object ? object : realised_sampler,
-                               VK_NULL_HANDLE,
-                               VK_IMAGE_LAYOUT_UNDEFINED);
-  }
+  sampler_pool.for_each_valid(
+    [&sampler_infos, &realised_sampler](const auto& object) {
+      sampler_infos.emplace_back(object ? object : realised_sampler,
+                                 VK_NULL_HANDLE,
+                                 VK_IMAGE_LAYOUT_UNDEFINED);
+    });
 
   std::array<VkWriteDescriptorSet, 3> writes{};
   auto write_count = 0U;
@@ -769,18 +770,17 @@ Context::create_placeholder_resources() -> void
     255,
     255,
   };
-  auto image = VkTexture::create(
-    *this,
-    VkTextureDescription{
-      .data = std::span(dummy_white_texture),
-      .format = VK_FORMAT_R8G8B8A8_UNORM,
-      .extent = { 1, 1, 1 },
-      .usage_flags = TextureUsageFlags::Sampled | TextureUsageFlags::Storage,
-      .debug_name = "Dummy White Texture (1x1)",
-    });
-  assert(image.valid());
-  dummy_texture = image.release();
-
+  dummy_texture =
+    VkTexture::create(
+      *this,
+      VkTextureDescription{
+        .data = std::span(dummy_white_texture),
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .extent = { 1, 1, 1 },
+        .usage_flags = TextureUsageFlags::Sampled | TextureUsageFlags::Storage,
+        .debug_name = "Dummy White Texture (1x1)",
+      })
+      .release();
   dummy_sampler = VkTextureSampler::create(
                     *this,
                     VkSamplerCreateInfo{
@@ -815,7 +815,8 @@ Context::get_allocator_implementation() -> IAllocator&
 }
 
 auto
-Context::resize_swapchain(const std::uint32_t width, const std::uint32_t height) -> void
+Context::resize_swapchain(const std::uint32_t width, const std::uint32_t height)
+  -> void
 {
   if (swapchain) {
     swapchain->resize(width, height);

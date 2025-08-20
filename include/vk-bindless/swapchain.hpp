@@ -72,6 +72,9 @@ private:
   std::array<VkFence, max_swapchain_images> present_fences{};
   std::array<std::uint64_t, max_swapchain_images> timeline_wait_values{};
 
+  auto create_swapchain_impl(std::uint32_t, std::uint32_t, VkSwapchainKHR)
+    -> void;
+
   friend class Context;
 };
 

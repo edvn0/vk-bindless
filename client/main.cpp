@@ -1,6 +1,7 @@
 #include "vk-bindless/event_system.hpp"
 #include "vk-bindless/transitions.hpp"
 #include "vk-bindless/vulkan_context.hpp"
+#include "vulkan/vulkan_core.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -67,12 +68,12 @@ protected:
 
     if (event.key == GLFW_KEY_ESCAPE) {
       glfwSetWindowShouldClose(window, GLFW_TRUE);
-      return true; // Consume escape key
+      return true;
     }
 
     if (event.key == GLFW_KEY_F11) {
       toggle_fullscreen();
-      return true; // Consume F11
+      return true;
     }
 
     return false;
@@ -80,10 +81,9 @@ protected:
 
   bool handle_event(const EventSystem::WindowResizeEvent& event) override
   {
-    // Handle window resize if needed
     std::cout << std::format(
       "Window resized to {}x{}\n", event.width, event.height);
-    return false; // Don't consume resize events
+    return false;
   }
 
 private:
@@ -125,7 +125,6 @@ private:
   }
 };
 
-// Example game logic handler
 class GameLogicHandler : public EventSystem::EventHandler
 {
 public:
@@ -137,11 +136,11 @@ protected:
     if (event.action == GLFW_PRESS) {
       if (event.key == GLFW_KEY_W) {
         std::cout << "Move forward\n";
-        return false; // Don't consume, other systems might want this
+        return false;
       }
       if (event.key == GLFW_KEY_SPACE) {
         std::cout << "Jump action\n";
-        return true; // Consume space key
+        return true;
       }
     }
     return false;
@@ -150,19 +149,13 @@ protected:
   bool handle_event(const EventSystem::MouseButtonEvent& event) override
   {
     if (event.action == GLFW_PRESS && event.button == GLFW_MOUSE_BUTTON_LEFT) {
-      std::cout << "Primary action (shoot/interact)\n";
-      return true; // Consume left click
+      return true;
     }
     return false;
   }
 
-  bool handle_event(const EventSystem::MouseMoveEvent& event) override
+  bool handle_event(const EventSystem::MouseMoveEvent&) override
   {
-    // Handle camera movement
-    if (std::abs(event.delta_x) > 0.1 || std::abs(event.delta_y) > 0.1) {
-      std::cout << std::format(
-        "Camera delta: {:.2f}, {:.2f}\n", event.delta_x, event.delta_y);
-    }
     return false; // Don't consume mouse movement
   }
 };
@@ -287,6 +280,12 @@ main() -> std::int32_t
     return surface;
   });
 
+  if (!context) {
+    std::cerr << "Failed to create Vulkan context: " << context.error().message
+              << std::endl;
+    return 1;
+  }
+
   auto vulkan_context = std::move(context.value());
 
   glfwSetWindowUserPointer(window.get(), &state);
@@ -320,39 +319,30 @@ main() -> std::int32_t
     if (!new_width || !new_height)
       continue;
 
-    if (auto& swapchain = vulkan_context->get_swapchain();
-        static_cast<std::uint32_t>(new_width) != swapchain.width() ||
-        static_cast<std::uint32_t>(new_height) != swapchain.height()) {
-      swapchain.resize(new_width, new_height);
-      continue;
-    }
-
     auto& buf = vulkan_context->acquire_command_buffer();
 
     RenderPass render_pass {
       .color= { RenderPass::AttachmentDescription{
   .load_op = LoadOp::Clear,
-        .clear_colour = std::array{0.0F, 1.0F, 0.0F, 1.0F},
+        .clear_colour = std::array{1.0F, 0.0F, 0.0F, 1.0F},
       }, },
       .depth ={},
       .stencil =  {},
     .layer_count = 1,
       .view_mask = 0,
     };
+    auto swapchain_texture = vulkan_context->get_current_swapchain_texture();
     Framebuffer framebuffer{
       .color = { Framebuffer::AttachmentDescription{
-          .texture = vulkan_context->get_current_swapchain_texture(), }, },
+          .texture = swapchain_texture, }, },
       .depth_stencil = {},
       .debug_name = "Main Framebuffer",
     };
     buf.cmd_begin_rendering(render_pass, framebuffer, {});
+    //  buf.cmd_bind_graphics_pipeline(cube_pipeline_handle);
+    // buf.cmd_draw(36, 1, 0, 0);
     buf.cmd_end_rendering();
-    const auto result = vulkan_context->submit(
-      buf, vulkan_context->get_current_swapchain_texture());
-    if (!result) {
-      std::cerr << "Failed to submit command buffer." << std::endl;
-      break;
-    }
+    const auto result = vulkan_context->submit(buf, swapchain_texture);
   }
 
   vulkan_context.reset();

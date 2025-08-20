@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstdint>
 #include <iostream>
+#include <vulkan/vulkan_core.h>
 
 namespace VkBindless {
 
@@ -341,9 +342,11 @@ CommandBuffer::cmd_begin_rendering(const RenderPass& render_pass,
 
   context->update_resource_bindings();
 
-  vkCmdSetDepthTestEnable(wrapper->command_buffer, fb.depth_stencil.texture ? VK_TRUE : VK_FALSE);
+  vkCmdSetDepthTestEnable(wrapper->command_buffer,
+                          fb.depth_stencil.texture ? VK_TRUE : VK_FALSE);
   if (fb.depth_stencil.texture) {
-    vkCmdSetDepthCompareOp(wrapper->command_buffer, VK_COMPARE_OP_LESS); // or your desired compare op
+    vkCmdSetDepthCompareOp(wrapper->command_buffer,
+                           VK_COMPARE_OP_LESS); // or your desired compare op
     vkCmdSetDepthWriteEnable(wrapper->command_buffer, VK_TRUE);
   } else {
     vkCmdSetDepthTestEnable(wrapper->command_buffer, VK_FALSE);
@@ -359,6 +362,124 @@ CommandBuffer::cmd_end_rendering() -> void
   vkCmdEndRendering(wrapper->command_buffer);
   is_rendering = false;
   framebuffer = {};
+}
+
+auto
+CommandBuffer::cmd_bind_viewport(const Viewport& viewport) -> void
+{
+  assert(is_rendering && "Viewport can only be bound during rendering");
+  const VkViewport vp = {
+    .x = viewport.x,
+    .y = viewport.height - viewport.y,
+    .width = viewport.width,
+    .height = -viewport.height,
+    .minDepth = viewport.minDepth,
+    .maxDepth = viewport.maxDepth,
+  };
+  vkCmdSetViewport(wrapper->command_buffer, 0, 1, &vp);
+}
+
+auto
+CommandBuffer::cmd_bind_scissor_rect(const ScissorRect& rect) -> void
+{
+  assert(is_rendering && "Scissor rect can only be bound during rendering");
+  VkRect2D vk_rect = { .offset = { static_cast<std::int32_t>(rect.x),
+                                   static_cast<std::int32_t>(rect.y), },
+                       .extent = { rect.width, rect.height, }, };
+  vkCmdSetScissor(wrapper->command_buffer, 0, 1, &vk_rect);
+}
+
+auto
+CommandBuffer::cmd_bind_depth_state(const DepthState& state) -> void
+{
+  assert(is_rendering && "Depth state can only be bound during rendering");
+  vkCmdSetDepthTestEnable(wrapper->command_buffer,
+                          state.is_depth_write_enabled ? VK_TRUE : VK_FALSE);
+  vkCmdSetDepthCompareOp(wrapper->command_buffer,
+                         static_cast<VkCompareOp>(state.compare_operation));
+  vkCmdSetDepthWriteEnable(wrapper->command_buffer,
+                           state.is_depth_write_enabled ? VK_TRUE : VK_FALSE);
+  vkCmdSetDepthBiasEnable(wrapper->command_buffer, VK_FALSE);
+}
+
+auto
+CommandBuffer::cmd_draw(std::uint32_t vertex_count,
+                        std::uint32_t instance_count,
+                        std::uint32_t first_vertex,
+                        std::uint32_t base_instance) -> void
+{
+  assert(is_rendering && "Draw can only be called during rendering");
+  vkCmdDraw(wrapper->command_buffer,
+            vertex_count,
+            instance_count,
+            first_vertex,
+            base_instance);
+}
+
+auto
+CommandBuffer::cmd_draw_indexed(std::uint32_t index_count,
+                                std::uint32_t instance_count,
+                                std::uint32_t first_index,
+                                std::int32_t vertex_offset,
+                                std::uint32_t base_instance) -> void
+{
+  assert(is_rendering && "Draw indexed can only be called during rendering");
+  vkCmdDrawIndexed(wrapper->command_buffer,
+                   index_count,
+                   instance_count,
+                   first_index,
+                   vertex_offset,
+                   base_instance);
+}
+
+auto
+CommandBuffer::cmd_bind_graphics_pipeline(GraphicsPipelineHandle) -> void
+{
+}
+
+auto
+CommandBuffer::cmd_push_constants(std::span<const std::byte> data) -> void
+{
+  assert(is_rendering && "Push constants can only be called during rendering");
+
+  auto device_limits =
+    context->vulkan_properties.base.limits.maxPushConstantsSize;
+  if (data.empty() || data.size_bytes() % 4 != 0 ||
+      data.size_bytes() > device_limits) {
+    std::cerr << "Push constants must be a multiple of 4 bytes." << std::endl;
+    return;
+  }
+
+  if (current_pipeline_compute.empty() && current_pipeline_graphics.empty()) {
+    std::cerr << "No pipeline bound for push constants." << std::endl;
+    return;
+  }
+
+  auto graphics_pipeline =
+    *context->get_graphics_pipeline_pool().get(current_pipeline_graphics);
+  auto compute_pipeline =
+    *context->get_compute_pipeline_pool().get(current_pipeline_compute);
+
+  assert(graphics_pipeline || compute_pipeline);
+
+  VkPipelineLayout pipeline_layout = graphics_pipeline
+                                       ? graphics_pipeline->get_layout()
+                                       : compute_pipeline->get_layout();
+  VkShaderStageFlags stage_flags = graphics_pipeline
+                                     ? graphics_pipeline->get_stage_flags()
+                                     : compute_pipeline->get_stage_flags();
+
+  if (pipeline_layout == VK_NULL_HANDLE) {
+    std::cerr << "Pipeline layout is null for push constants." << std::endl;
+    return;
+  }
+
+  vkCmdPushConstants(wrapper->command_buffer,
+                     pipeline_layout,
+                     stage_flags,
+                     0,
+                     static_cast<std::uint32_t>(data.size_bytes()),
+                     data.data());
 }
 
 } // namespace vk_bindless
