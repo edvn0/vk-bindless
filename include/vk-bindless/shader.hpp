@@ -56,7 +56,7 @@ class VkShader
 public:
 
   VkShader() = default;
-  VkShader(IContext*, std::vector<StageModule>&&, PushConstantInfo&&,VkShaderStageFlagBits );
+  VkShader(IContext*, std::vector<StageModule>&&, PushConstantInfo,VkShaderStageFlagBits );
 
   static auto create(IContext* context, const std::filesystem::path& path)
     -> Holder<ShaderModuleHandle>;

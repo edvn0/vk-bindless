@@ -56,6 +56,7 @@ add_library(${PROJECT_NAME}
     src/pipeline.cpp
     src/swapchain.cpp
     src/event_system.cpp
+    src/imgui_renderer.cpp
 )
 target_include_directories(${PROJECT_NAME}
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include

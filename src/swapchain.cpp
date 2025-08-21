@@ -351,7 +351,7 @@ vkSetHdrMetadataEXT(device_, 1, &swapchain_, &metadata);
     VkTexture image{
       context_ref,
       VkTextureDescription{
-        .format = swapchain_surface_format.format,
+        .format = vk_format_to_format(swapchain_surface_format.format),
         .extent = { swapchain_width, swapchain_height, 1 },
         .usage_flags = TextureUsageFlags::ColourAttachment |
                        TextureUsageFlags::TransferSource |

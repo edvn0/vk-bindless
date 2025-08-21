@@ -257,7 +257,7 @@ main()
 
   float ndotl = max(dot(frag_normal, vec3(pc.light_direction)), 0.0);
 
-    vec4 texture_color = textureBindless2D(0, 0, frag_uv);
-
+    //vec4 texture_color = textureBindless2D(0, 0, frag_uv);
+vec4 texture_color = vec4(1.0, 1.0, 1.0, 1.0); // Placeholder for texture
   out_color = vec4(frag_color.rgb*texture_color.rgb, 1.0);
 }

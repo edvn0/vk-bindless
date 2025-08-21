@@ -117,15 +117,15 @@ static constexpr glslang_resource_t
                          .max_dual_source_draw_buffers_ext = 1,
 
                          .limits = {
-                           .non_inductive_for_loops = 1,
-                           .while_loops = 1,
-                           .do_while_loops = 1,
-                           .general_uniform_indexing = 1,
-                           .general_attribute_matrix_vector_indexing = 1,
-                           .general_varying_indexing = 1,
-                           .general_sampler_indexing = 1,
-                           .general_variable_indexing = 1,
-                           .general_constant_matrix_vector_indexing = 1,
+                           .non_inductive_for_loops = true,
+                           .while_loops = true,
+                           .do_while_loops = true,
+                           .general_uniform_indexing = true,
+                           .general_attribute_matrix_vector_indexing = true,
+                           .general_varying_indexing = true,
+                           .general_sampler_indexing = true,
+                           .general_variable_indexing = true,
+                           .general_constant_matrix_vector_indexing = true,
                          }, };
 
 namespace VkBindless {
@@ -261,12 +261,12 @@ VkShader::compile(IContext* context, const std::filesystem::path& path)
   auto flags = static_cast<VkShaderStageFlagBits>(total_stages);
   push_constant_info.stages = flags;
 
-  return VkShader(context, std::move(modules), std::move(push_constant_info), flags);
+  return VkShader(context, std::move(modules), push_constant_info, flags);
 }
 
 VkShader::VkShader(IContext* ctx,
                    std::vector<StageModule>&& mods,
-                   PushConstantInfo&& push_info,
+                   const PushConstantInfo push_info,
                    const VkShaderStageFlagBits flag_bits)
   : push_constant_info(push_info)
   , context(dynamic_cast<Context*>(ctx))

@@ -81,6 +81,8 @@ struct IContext
   virtual auto submit(ICommandBuffer&, TextureHandle present)
     -> Expected<SubmitHandle, std::string> = 0;
   virtual auto get_current_swapchain_texture() -> TextureHandle = 0;
+
+  auto get_format(TextureHandle handle) -> Format;
 };
 
 } // namespace VkBindless

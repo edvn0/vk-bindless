@@ -17,6 +17,9 @@
 
 namespace VkBindless {
 
+auto format_to_vk_format(Format format) -> VkFormat;
+auto vk_format_to_format( VkFormat format) -> Format;
+
 inline auto
 set_name_for_object(auto device,
                     const auto type,
@@ -105,14 +108,15 @@ public:
     return *immediate_commands;
   }
 
-  void bind_default_descriptor_sets(const VkCommandBuffer cmd,
+  auto bind_default_descriptor_sets(const VkCommandBuffer cmd,
                                     const VkPipelineBindPoint bind_point,
-                                    const VkPipelineLayout layout) const
+                                    const VkPipelineLayout layout) const -> void
   {
     const std::array dsets{
       descriptor_set,
       descriptor_set,
       descriptor_set,
+      descriptor_set
     };
     vkCmdBindDescriptorSets(cmd,
                             bind_point,

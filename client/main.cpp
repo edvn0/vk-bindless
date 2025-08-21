@@ -9,6 +9,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include "glm/ext/matrix_clip_space.hpp"
 #include "glm/ext/matrix_transform.hpp"
+#include "vk-bindless/imgui_renderer.hpp"
 
 #include <GLFW/glfw3.h>
 
@@ -336,7 +337,7 @@ main() -> std::int32_t
 
   auto depth_texture = VkTexture::create(*vulkan_context, {
   .data = {},
-  .format = VK_FORMAT_D32_SFLOAT,
+  .format = Format::Z_F32,
   .extent = {
     .width = static_cast<std::uint32_t>(initial_width),
     .height = static_cast<std::uint32_t>(initial_height),
@@ -355,6 +356,9 @@ main() -> std::int32_t
   .externally_created_image = {},
   .debug_name = "Depth Texture",
   });
+
+  auto imgui = std::make_unique<ImGuiRenderer>(
+    *vulkan_context, "assets/fonts/Roboto-Regular.ttf");
 
   while (!glfwWindowShouldClose(window.get())) {
     event_dispatcher.process_events();
@@ -388,6 +392,7 @@ main() -> std::int32_t
     };
 
     buf.cmd_begin_rendering(render_pass, framebuffer, {});
+    imgui->begin_frame(framebuffer);
     struct PC
     {
       glm::mat4 mvp{1.0F};
@@ -424,6 +429,8 @@ main() -> std::int32_t
     buf.cmd_bind_depth_state({.compare_operation =  CompareOp::Greater, .is_depth_write_enabled = true,});
     buf.cmd_push_constants<PC>(pc, 0);
     buf.cmd_draw(36, 1, 0, 0);
+
+    imgui->end_frame(buf);
     buf.cmd_end_rendering();
     const auto result = vulkan_context->submit(buf, swapchain_texture);
   }

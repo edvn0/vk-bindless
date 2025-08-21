@@ -1,6 +1,6 @@
 #pragma once
 
-#include "allocator_interface.hpp"
+#include "vk-bindless/allocator_interface.hpp"
 
 #include <array>
 #include <cstdint>
@@ -8,7 +8,7 @@
 #include <string>
 #include <vulkan/vulkan.h>
 
-
+#include "vk-bindless/common.hpp"
 #include "vk-bindless/forward.hpp"
 #include "vk-bindless/holder.hpp"
 
@@ -92,7 +92,7 @@ struct VkTextureDescription
 {
   std::span<const std::uint8_t> data{}; // This can absolutely be empty, but if
                                         // it is not, it must be a valid image
-  VkFormat format{ VK_FORMAT_UNDEFINED };
+  Format format{ Format::Invalid };
   VkExtent3D extent{ 1, 1, 1 };
   TextureUsageFlags usage_flags{ TextureUsageFlags::Sampled |
                                  TextureUsageFlags::TransferSource |
@@ -159,6 +159,11 @@ public:
                                       std::uint32_t layer) -> VkImageView;
   auto create_image_view(VkDevice, const VkImageViewCreateInfo&) -> void;
 
+  [[nodiscard]] auto get_format() const -> Format
+  {
+    return format;
+  }
+
 private:
   VkImageView image_view{ VK_NULL_HANDLE };
   VkImageView storage_image_view{ VK_NULL_HANDLE };
@@ -166,7 +171,7 @@ private:
   VkSampleCountFlagBits sample_count{ VK_SAMPLE_COUNT_1_BIT };
   VkImageAspectFlags image_aspect_flags{ VK_IMAGE_ASPECT_COLOR_BIT };
   VkExtent3D extent{ 1, 1, 1 };
-  VkFormat format{ VK_FORMAT_UNDEFINED };
+  Format format{ Format::Invalid };
   bool image_owns_itself{ true };
   bool is_swapchain{ false };
   std::uint32_t mip_levels{ 1 };

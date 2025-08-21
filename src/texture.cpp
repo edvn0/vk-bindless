@@ -32,7 +32,7 @@ VkTexture::create_internal_image(IContext& ctx,
   image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
   image_info.pNext = nullptr;
   image_info.imageType = VK_IMAGE_TYPE_2D;
-  image_info.format = description.format;
+  image_info.format = format_to_vk_format(description.format);
   image_info.extent = description.extent;
   image_info.mipLevels = description.mip_levels.value_or(
     static_cast<std::uint32_t>(std::log2(max(description.extent.width,
@@ -111,7 +111,7 @@ is_depth{ static_cast<bool>(description.usage_flags &
                         description.layers == 6)
                          ? VK_IMAGE_VIEW_TYPE_CUBE
                          : VK_IMAGE_VIEW_TYPE_2D;
-  view_info.format = description.format;
+  view_info.format = format_to_vk_format(description.format);
   view_info.subresourceRange.aspectMask = is_depth
                                            ? VK_IMAGE_ASPECT_DEPTH_BIT
                                            : VK_IMAGE_ASPECT_COLOR_BIT;
@@ -218,7 +218,7 @@ VkTexture::get_or_create_framebuffer_view(IContext& context,
     .viewType = (extent.width == extent.height && array_layers == 6)
                   ? VK_IMAGE_VIEW_TYPE_CUBE
                   : VK_IMAGE_VIEW_TYPE_2D,
-    .format = format,
+    .format =format_to_vk_format( format),
     .components = {
       .r = VK_COMPONENT_SWIZZLE_R,
       .g = VK_COMPONENT_SWIZZLE_G,
