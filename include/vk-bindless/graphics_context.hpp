@@ -1,12 +1,13 @@
 #pragma once
 
+#include "vk-bindless/command_buffer.hpp"
 #include "vk-bindless/commands.hpp"
 #include "vk-bindless/expected.hpp"
 #include "vk-bindless/forward.hpp"
 #include "vk-bindless/handle.hpp"
+#include "vk-bindless/pipeline.hpp"
 #include "vk-bindless/shader.hpp"
 #include "vk-bindless/texture.hpp"
-
 
 #include <deque>
 #include <functional>
@@ -28,41 +29,6 @@ using PreFrameCallback = std::function<void(VkDevice, VkAllocationCallbacks*)>;
 struct ContextError
 {
   std::string message;
-};
-
-class VkComputePipeline
-{
-private:
-  VkPipelineLayout layout{ VK_NULL_HANDLE };
-  VkShaderStageFlags stage_flags{ VK_SHADER_STAGE_COMPUTE_BIT };
-
-public:
-  [[nodiscard]] auto get_layout() const -> const VkPipelineLayout&
-  {
-    return layout;
-  }
-
-  [[nodiscard]] auto get_stage_flags() const -> const VkShaderStageFlags&
-  {
-    return stage_flags;
-  }
-};
-class VkGraphicsPipeline
-{
-private:
-  VkPipelineLayout layout{ VK_NULL_HANDLE };
-  VkShaderStageFlags stage_flags{ VK_SHADER_STAGE_ALL_GRAPHICS };
-
-public:
-  [[nodiscard]] auto get_layout() const -> const VkPipelineLayout&
-  {
-    return layout;
-  }
-
-  [[nodiscard]] auto get_stage_flags() const -> const VkShaderStageFlags&
-  {
-    return stage_flags;
-  }
 };
 
 using TexturePool = Pool<Texture, VkTexture>;

@@ -105,6 +105,25 @@ public:
     return *immediate_commands;
   }
 
+  void bind_default_descriptor_sets(VkCommandBuffer cmdBuf,
+                                    VkPipelineBindPoint bindPoint,
+                                    VkPipelineLayout layout) const
+  {
+    const std::array<VkDescriptorSet, 3> dsets{
+      descriptor_set,
+      descriptor_set,
+      descriptor_set,
+    };
+    vkCmdBindDescriptorSets(cmdBuf,
+                            bindPoint,
+                            layout,
+                            0,
+                            static_cast<std::uint32_t>(dsets.size()),
+                            dsets.data(),
+                            0,
+                            nullptr);
+  }
+
 private:
   vkb::Instance vkb_instance{};
   vkb::PhysicalDevice vkb_physical_device{};

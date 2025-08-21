@@ -1,8 +1,10 @@
+#include "vk-bindless/command_buffer.hpp"
 #include "vk-bindless/event_system.hpp"
+#include "vk-bindless/graphics_context.hpp"
+#include "vk-bindless/scope_exit.hpp"
 #include "vk-bindless/shader.hpp"
 #include "vk-bindless/transitions.hpp"
 #include "vk-bindless/vulkan_context.hpp"
-#include "vulkan/vulkan_core.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -288,6 +290,10 @@ main() -> std::int32_t
   }
 
   auto vulkan_context = std::move(context.value());
+  SCOPE_EXIT
+  {
+    vulkan_context.reset();
+  };
 
   glfwSetWindowUserPointer(window.get(), &state);
 
@@ -313,11 +319,23 @@ main() -> std::int32_t
   std::int32_t new_width = 0;
   std::int32_t new_height = 0;
 
-  auto shader_handle =
-    VkShader::create(vulkan_context.get(), "assets/shaders/cube.shader")
-      .release();
+  auto shader =
+    VkShader::create(vulkan_context.get(), "assets/shaders/cube.shader");
 
-  (void)shader_handle; // Suppress unused variable warning
+  auto cube_pipeline_handle = VkGraphicsPipeline::create(
+    vulkan_context.get(),
+    { .shader = static_cast<ShaderModuleHandle>(shader),
+      .color = {
+        ColourAttachment{
+          .format = Format::BGRA_UN8,
+        },
+      } });
+
+  SCOPE_EXIT
+  {
+    shader.reset();
+    cube_pipeline_handle.reset();
+  };
 
   while (!glfwWindowShouldClose(window.get())) {
     event_dispatcher.process_events();
@@ -346,15 +364,11 @@ main() -> std::int32_t
       .debug_name = "Main Framebuffer",
     };
     buf.cmd_begin_rendering(render_pass, framebuffer, {});
-    //  buf.cmd_bind_graphics_pipeline(cube_pipeline_handle);
+    buf.cmd_bind_graphics_pipeline(*cube_pipeline_handle);
     // buf.cmd_draw(36, 1, 0, 0);
     buf.cmd_end_rendering();
     const auto result = vulkan_context->submit(buf, swapchain_texture);
   }
-
-  vulkan_context.reset();
-
-  std::cout << "Application exited cleanly." << std::endl;
 
   return 0;
 }

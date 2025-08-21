@@ -1,0 +1,102 @@
+#pragma once
+
+#include "vk-bindless/command_buffer.hpp"
+#include "vk-bindless/forward.hpp"
+#include "vk-bindless/holder.hpp"
+
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <memory>
+#include <span>
+
+namespace VkBindless {
+
+class VkComputePipeline
+{
+private:
+  VkPipelineLayout layout{ VK_NULL_HANDLE };
+  VkShaderStageFlags stage_flags{ VK_SHADER_STAGE_COMPUTE_BIT };
+
+public:
+  [[nodiscard]] auto get_layout() const -> const VkPipelineLayout&
+  {
+    return layout;
+  }
+
+  [[nodiscard]] auto get_stage_flags() const -> const VkShaderStageFlags&
+  {
+    return stage_flags;
+  }
+};
+
+struct GraphicsPipelineDescription
+{
+  Topology topology{ Topology::Triangle };
+  VertexInput vertex_input{};
+  ShaderModuleHandle shader;
+  SpecialisationConstantDescription specialisation_constants{};
+  std::array<ColourAttachment, max_colour_attachments> color{};
+  Format depth_format = Format::Invalid;
+  Format stencil_format = Format::Invalid;
+  CullMode cull_mode = CullMode::None;
+  WindingMode winding = WindingMode::CCW;
+  PolygonMode polygon_mode = PolygonMode::Fill;
+  StencilState back_face_stencil = {};
+  StencilState front_face_stencil = {};
+  uint32_t sample_count = 1u;
+  uint32_t patch_control_points = 0;
+  float min_sample_shading = 0.0f;
+  std::string debug_name{};
+
+  auto get_colour_attachments_count() const -> std::uint32_t
+  {
+    auto result = std::count_if(
+      color.begin(), color.end(), [](const ColourAttachment& attachment) {
+        return attachment.format != Format::Invalid;
+      });
+    return static_cast<std::uint32_t>(result);
+  }
+};
+
+class VkGraphicsPipeline
+{
+private:
+  VkPipelineLayout layout{ VK_NULL_HANDLE };
+  VkPipeline pipeline{ VK_NULL_HANDLE };
+  VkShaderStageFlags stage_flags{ VK_SHADER_STAGE_ALL_GRAPHICS };
+  GraphicsPipelineDescription description{};
+  std::uint32_t binding_count{ 0 };
+  std::uint32_t attribute_count{ 0 };
+
+  std::array<VkVertexInputBindingDescription,
+             VertexInput::input_bindings_max_count>
+    bindings{};
+  std::array<VkVertexInputAttributeDescription,
+             VertexInput::vertex_attribute_max_count>
+    attributes{};
+  VkDescriptorSetLayout descriptor_set_layout{ VK_NULL_HANDLE };
+
+  std::unique_ptr<std::byte[]> specialisation_constants_storage{ nullptr };
+
+  friend class CommandBuffer;
+
+public:
+  [[nodiscard]] auto get_layout() const -> const VkPipelineLayout&
+  {
+    return layout;
+  }
+  [[nodiscard]] auto get_stage_flags() const -> const VkShaderStageFlags&
+  {
+    return stage_flags;
+  }
+  [[nodiscard]] auto get_pipeline() const -> const VkPipeline&
+  {
+    return pipeline;
+  }
+
+  static auto create(IContext* context, const GraphicsPipelineDescription& desc)
+    -> Holder<GraphicsPipelineHandle>;
+};
+
+}

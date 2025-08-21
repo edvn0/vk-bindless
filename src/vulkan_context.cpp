@@ -966,9 +966,28 @@ Context::destroy(ComputePipelineHandle) -> void
 }
 
 auto
-Context::destroy(GraphicsPipelineHandle) -> void
+Context::destroy(GraphicsPipelineHandle handle) -> void
 {
-  TODO("Implement graphics pipeline destruction");
+  if (!handle.valid()) {
+    return;
+  }
+
+  const auto maybe_pipeline = get_graphics_pipeline_pool().get(handle);
+  if (!maybe_pipeline.has_value()) {
+    return;
+  }
+
+  auto* pipeline = maybe_pipeline.value();
+  if (pipeline == nullptr) {
+    return;
+  }
+
+  pre_frame_task(
+    [ptr = pipeline->get_pipeline(),
+     layout = pipeline->get_layout()](auto device, auto* allocation_callbacks) {
+      vkDestroyPipeline(device, ptr, allocation_callbacks);
+      vkDestroyPipelineLayout(device, layout, allocation_callbacks);
+    });
 }
 
 auto

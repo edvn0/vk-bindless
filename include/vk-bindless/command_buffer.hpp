@@ -1,12 +1,16 @@
 #pragma once
 
-#include "vk-bindless/graphics_context.hpp"
+#include "vk-bindless/commands.hpp"
+#include "vk-bindless/forward.hpp"
 #include "vk-bindless/handle.hpp"
+
 
 #include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <span>
+#include <string>
 #include <variant>
 
 namespace VkBindless {
@@ -20,7 +24,7 @@ enum class IndexFormat : std::uint8_t
   UI32,
 };
 
-enum Topology : uint8_t
+enum class Topology : std::uint8_t
 {
   Point,
   Line,
@@ -28,6 +32,19 @@ enum Topology : uint8_t
   Triangle,
   TriangleStrip,
   Patch,
+};
+
+enum class CullMode : std::uint8_t
+{
+  None,
+  Front,
+  Back
+};
+
+enum class WindingMode : std::uint8_t
+{
+  CCW,
+  CW
 };
 
 enum class ColorSpace : std::uint8_t
@@ -103,34 +120,34 @@ enum class StencilOp : std::uint8_t
 
 enum class BlendOp : std::uint8_t
 {
-  BlendOp_Add = 0,
-  BlendOp_Subtract,
-  BlendOp_ReverseSubtract,
-  BlendOp_Min,
-  BlendOp_Max
+  Add = 0,
+  Subtract,
+  ReverseSubtract,
+  Min,
+  Max
 };
 
 enum class BlendFactor : std::uint8_t
 {
-  BlendFactor_Zero = 0,
-  BlendFactor_One,
-  BlendFactor_SrcColor,
-  BlendFactor_OneMinusSrcColor,
-  BlendFactor_SrcAlpha,
-  BlendFactor_OneMinusSrcAlpha,
-  BlendFactor_DstColor,
-  BlendFactor_OneMinusDstColor,
-  BlendFactor_DstAlpha,
-  BlendFactor_OneMinusDstAlpha,
-  BlendFactor_SrcAlphaSaturated,
-  BlendFactor_BlendColor,
-  BlendFactor_OneMinusBlendColor,
-  BlendFactor_BlendAlpha,
-  BlendFactor_OneMinusBlendAlpha,
-  BlendFactor_Src1Color,
-  BlendFactor_OneMinusSrc1Color,
-  BlendFactor_Src1Alpha,
-  BlendFactor_OneMinusSrc1Alpha
+  Zero = 0,
+  One,
+  SrcColor,
+  OneMinusSrcColor,
+  SrcAlpha,
+  OneMinusSrcAlpha,
+  DstColor,
+  OneMinusDstColor,
+  DstAlpha,
+  OneMinusDstAlpha,
+  SrcAlphaSaturated,
+  BlendColor,
+  OneMinusBlendColor,
+  BlendAlpha,
+  OneMinusBlendAlpha,
+  Src1Color,
+  OneMinusSrc1Color,
+  Src1Alpha,
+  OneMinusSrc1Alpha
 };
 
 enum class LoadOp : std::uint8_t
@@ -157,6 +174,196 @@ enum class ResolveMode : std::uint8_t
   Average,
   Min,
   Max,
+};
+
+enum class PolygonMode : uint8_t
+{
+  Fill = 0,
+  Line = 1,
+};
+
+enum class VertexFormat
+{
+  Invalid = 0,
+
+  Float1,
+  Float2,
+  Float3,
+  Float4,
+
+  Byte1,
+  Byte2,
+  Byte3,
+  Byte4,
+
+  UByte1,
+  UByte2,
+  UByte3,
+  UByte4,
+
+  Short1,
+  Short2,
+  Short3,
+  Short4,
+
+  UShort1,
+  UShort2,
+  UShort3,
+  UShort4,
+
+  Byte2Norm,
+  Byte4Norm,
+
+  UByte2Norm,
+  UByte4Norm,
+
+  Short2Norm,
+  Short4Norm,
+
+  UShort2Norm,
+  UShort4Norm,
+
+  Int1,
+  Int2,
+  Int3,
+  Int4,
+
+  UInt1,
+  UInt2,
+  UInt3,
+  UInt4,
+
+  HalfFloat1,
+  HalfFloat2,
+  HalfFloat3,
+  HalfFloat4,
+
+  Int_2_10_10_10_REV,
+};
+
+enum class Format : uint8_t
+{
+  Invalid = 0,
+
+  R_UN8,
+  R_UI16,
+  R_UI32,
+  R_UN16,
+  R_F16,
+  R_F32,
+
+  RG_UN8,
+  RG_UI16,
+  RG_UI32,
+  RG_UN16,
+  RG_F16,
+  RG_F32,
+
+  RGBA_UN8,
+  RGBA_UI32,
+  RGBA_F16,
+  RGBA_F32,
+  RGBA_SRGB8,
+
+  BGRA_UN8,
+  BGRA_SRGB8,
+
+  A2B10G10R10_UN,
+  A2R10G10B10_UN,
+
+  ETC2_RGB8,
+  ETC2_SRGB8,
+  BC7_RGBA,
+
+  Z_UN16,
+  Z_UN24,
+  Z_F32,
+  Z_UN24_S_UI8,
+  Z_F32_S_UI8,
+
+  YUV_NV12,
+  YUV_420p,
+};
+
+struct VertexInput final
+{
+  static constexpr std::uint32_t vertex_attribute_max_count = 16;
+  static constexpr std::uint32_t input_bindings_max_count = 16;
+  struct VertexAttribute final
+  {
+    std::uint32_t location = 0;
+    std::uint32_t binding = 0;
+    VertexFormat format = VertexFormat::Invalid;
+    std::uintptr_t offset = 0;
+
+    auto operator<=>(const VertexAttribute& other) const = default;
+  };
+  std::array<VertexAttribute, vertex_attribute_max_count> attributes{};
+  struct VertexInputBinding final
+  {
+    std::uint32_t stride = 0;
+
+    auto operator<=>(const VertexInputBinding& other) const = default;
+  };
+  std::array<VertexInputBinding, input_bindings_max_count> input_bindings{};
+
+  [[nodiscard]] auto get_attributes_count() const
+  {
+    std::uint32_t n = 0;
+    while (n < vertex_attribute_max_count &&
+           attributes[n].format != VertexFormat::Invalid) {
+      n++;
+    }
+    return n;
+  }
+
+  [[nodiscard]] auto get_input_bindings_count() const
+  {
+    uint32_t n = 0;
+    while (n < input_bindings_max_count && input_bindings[n].stride) {
+      n++;
+    }
+    return n;
+  }
+
+  auto operator<=>(const VertexInput& other) const = default;
+};
+
+struct ColourAttachment
+{
+  Format format = Format::Invalid;
+  bool blend_enabled = false;
+  BlendOp rgb_blend_op = BlendOp::Add;
+  BlendOp alpha_blend_op = BlendOp::Add;
+  BlendFactor src_rgb_blend_factor = BlendFactor::One;
+  BlendFactor src_alpha_blend_factor = BlendFactor::One;
+  BlendFactor dst_rgb_blend_factor = BlendFactor::Zero;
+  BlendFactor dst_alpha_blend_factor = BlendFactor::Zero;
+};
+
+struct SpecialisationConstantDescription
+{
+  struct SpecialisationConstantEntry
+  {
+    std::uint32_t constant_id = 0;
+    std::uint32_t offset = 0; // offset within SpecializationConstantDesc::data
+    std::size_t size = 0;
+  };
+
+  static constexpr auto max_specialization_constants = 16U;
+
+  std::array<SpecialisationConstantEntry, max_specialization_constants>
+    entries{};
+  std::span<std::byte> data{};
+
+  auto get_specialisation_constants_count() const
+  {
+    std::uint32_t n = 0;
+    while (n < max_specialization_constants && entries[n].size) {
+      n++;
+    }
+    return n;
+  }
 };
 
 struct Dependencies

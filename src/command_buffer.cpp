@@ -433,8 +433,39 @@ CommandBuffer::cmd_draw_indexed(std::uint32_t index_count,
 }
 
 auto
-CommandBuffer::cmd_bind_graphics_pipeline(GraphicsPipelineHandle) -> void
+CommandBuffer::cmd_bind_graphics_pipeline(GraphicsPipelineHandle handle) -> void
 {
+  if (!handle.empty()) {
+    return;
+  }
+
+  current_pipeline_graphics = handle;
+
+  const auto* pipeline = *context->graphics_pipeline_pool.get(handle);
+
+  assert(pipeline);
+
+  const bool has_depth_attachment_pipeline =
+    pipeline->description.depth_format != Format::Invalid;
+  const bool has_depth_attachment_pass =
+    !framebuffer.depth_stencil.texture.empty();
+
+  if (has_depth_attachment_pipeline != has_depth_attachment_pass) {
+    assert(false);
+  }
+
+  VkPipeline vk_pipeline = context->get_pipeline(handle, view_mask);
+
+  assert(vk_pipeline != VK_NULL_HANDLE);
+
+  if (last_pipeline_bound != vk_pipeline) {
+    last_pipeline_bound = vk_pipeline;
+    vkCmdBindPipeline(
+      wrapper->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline);
+    context->bind_default_descriptor_sets(wrapper->command_buffer,
+                                          VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                          pipeline->get_layout());
+  }
 }
 
 auto

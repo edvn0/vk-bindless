@@ -9,6 +9,10 @@ struct ICommandBuffer;
 class Swapchain;
 class Context;
 
-template <typename Tag, typename Impl> class Pool;
+class VkComputePipeline;
+class VkGraphicsPipeline;
+
+template<typename Tag, typename Impl>
+class Pool;
 
 } // namespace VkBindless

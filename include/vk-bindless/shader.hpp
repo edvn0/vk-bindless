@@ -20,7 +20,7 @@ public:
   struct StageModule
   {
     ShaderStage stage;
-    std::string entry_name; // for compute
+    std::string entry_name{ "main" }; // for compute
     VkShaderModule module{ VK_NULL_HANDLE };
   };
 

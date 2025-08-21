@@ -35,7 +35,7 @@ else ()
 endif ()
 
 
-add_library(${PROJECT_NAME} STATIC src/graphics_context.cpp src/vulkan_context.cpp src/texture.cpp src/types.cpp src/shader_compilation.cpp src/shader.cpp src/commands.cpp src/command_buffer.cpp src/swapchain.cpp src/event_system.cpp)
+add_library(${PROJECT_NAME} STATIC src/graphics_context.cpp src/vulkan_context.cpp src/texture.cpp src/types.cpp src/pipeline.cpp src/shader_compilation.cpp src/shader.cpp src/commands.cpp src/command_buffer.cpp src/swapchain.cpp src/event_system.cpp)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${CMAKE_SOURCE_DIR}/third-party/VulkanMemoryAllocator/include)
 target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan vk-bootstrap CustomVMA glfw Vulkan::glslang Vulkan::SPIRV-Tools Vulkan::shaderc_combined)
 target_include_directories(${PROJECT_NAME} PUBLIC ${Vulkan_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/third-party/vk-bootstrap/src)
