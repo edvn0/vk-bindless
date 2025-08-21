@@ -13,3 +13,9 @@
 [submodule "third-party/expected"]
 	path = third-party/expected
 	url = git@github.com:TartanLlama/expected.git
+[submodule "third-party/SPIRV-Reflect"]
+	path = third-party/SPIRV-Reflect
+	url = git@github.com:KhronosGroup/SPIRV-Reflect.git
+[submodule "third-party/glm"]
+	path = third-party/glm
+	url = git@github.com:g-truc/glm.git

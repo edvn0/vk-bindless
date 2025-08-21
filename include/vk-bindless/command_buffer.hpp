@@ -458,6 +458,7 @@ struct ScissorRect
 
 struct StencilState
 {
+  bool enabled {false};
   StencilOp stencil_failure_operation = StencilOp::Keep;
   StencilOp depth_failure_operation = StencilOp::Keep;
   StencilOp depth_stencil_pass_operation = StencilOp::Keep;

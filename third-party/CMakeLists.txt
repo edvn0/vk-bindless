@@ -9,6 +9,13 @@ if (NOT HAS_STD_EXPECTED)
     add_subdirectory(expected)
 endif()
 
+set(SPIRV_REFLECT_EXECUTABLE OFF)
+set(SPIRV_REFLECT_STATIC_LIB ON)
+set(SPIRV_REFLECT_INSTALL OFF)
+add_subdirectory(SPIRV-Reflect)
+
+add_subdirectory(glm)
+
 if (ENABLE_TESTING)
     add_subdirectory(doctest)
 endif()

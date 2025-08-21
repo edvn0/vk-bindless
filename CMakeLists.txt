@@ -4,13 +4,20 @@ include(CheckCXXSourceCompiles)
 
 project(VkBindless LANGUAGES CXX)
 
+set(SPIRV_TOOLS_PATH "" CACHE PATH "SPIRV-Tools install or build directory")
+
+if (SPIRV_TOOLS_PATH)
+  list(PREPEND CMAKE_PREFIX_PATH "${SPIRV_TOOLS_PATH}")
+endif()
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Testing option
 option(ENABLE_TESTING "Enable testing" ON)
 
-find_package(Vulkan REQUIRED COMPONENTS glslang glslc SPIRV-Tools shaderc_combined glslangValidator)
+find_package(Vulkan REQUIRED COMPONENTS glslang glslc glslangValidator)
+find_package(SPIRV-Tools CONFIG REQUIRED)
+find_package(SPIRV-Tools-opt CONFIG REQUIRED)
 
 check_cxx_source_compiles("
 #include <expected>
@@ -23,9 +30,11 @@ int main() {
 add_subdirectory(third-party)
 
 add_library(CustomVMA STATIC src/vma_allocator_impl.cpp)
-target_include_directories(CustomVMA PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${CMAKE_SOURCE_DIR}/third-party/VulkanMemoryAllocator/include ${Vulkan_INCLUDE_DIRS})
+target_include_directories(CustomVMA
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_SOURCE_DIR}/third-party/VulkanMemoryAllocator/include ${Vulkan_INCLUDE_DIRS}
+)
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-    # -Wmissing-field-initializers,-Wunused-parameter
     target_compile_options(CustomVMA PRIVATE -Wno-missing-field-initializers -Wno-unused-parameter)
 endif ()
 if (HAS_STD_EXPECTED)
@@ -34,12 +43,46 @@ else ()
     target_include_directories(CustomVMA PUBLIC ${CMAKE_SOURCE_DIR}/third-party/expected/include)
 endif ()
 
+add_library(${PROJECT_NAME}
+    STATIC
+    src/graphics_context.cpp
+    src/vulkan_context.cpp
+    src/texture.cpp
+    src/types.cpp
+    src/shader_compilation.cpp
+    src/shader.cpp
+    src/commands.cpp
+    src/command_buffer.cpp
+    src/pipeline.cpp
+    src/swapchain.cpp
+    src/event_system.cpp
+)
+target_include_directories(${PROJECT_NAME}
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_SOURCE_DIR}/third-party/VulkanMemoryAllocator/include
+)
+target_include_directories(${PROJECT_NAME}
+    PUBLIC ${Vulkan_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/third-party/vk-bootstrap/src
+)
+target_compile_definitions(${PROJECT_NAME}
+    PRIVATE $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:IS_DEBUG>
+)
 
-add_library(${PROJECT_NAME} STATIC src/graphics_context.cpp src/vulkan_context.cpp src/texture.cpp src/types.cpp src/pipeline.cpp src/shader_compilation.cpp src/shader.cpp src/commands.cpp src/command_buffer.cpp src/swapchain.cpp src/event_system.cpp)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${CMAKE_SOURCE_DIR}/third-party/VulkanMemoryAllocator/include)
-target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan vk-bootstrap CustomVMA glfw Vulkan::glslang Vulkan::SPIRV-Tools Vulkan::shaderc_combined)
-target_include_directories(${PROJECT_NAME} PUBLIC ${Vulkan_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/third-party/vk-bootstrap/src)
-target_compile_definitions(${PROJECT_NAME} PRIVATE $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:IS_DEBUG>)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE
+        Vulkan::Vulkan
+        vk-bootstrap
+        CustomVMA
+        glfw
+        Vulkan::glslang
+        ${SPIRV-Tools_LIBRARIES}
+        ${SPIRV-Tools-opt_LIBRARIES}
+        spirv-reflect-static
+        PUBLIC
+        glm::glm
+)
+
+target_compile_definitions(${PROJECT_NAME} PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_LEFT_HANDED)
 
 if (HAS_STD_EXPECTED)
     target_compile_definitions(${PROJECT_NAME} PUBLIC HAS_STD_EXPECTED)
@@ -50,9 +93,18 @@ endif ()
 if (ENABLE_TESTING)
     enable_testing()
 
-    add_executable(test_vk_bindless test/main.cpp test/integration_tests.cpp test/shader_compilation_tests.cpp)
-    target_link_libraries(test_vk_bindless VkBindless::VkBindless doctest Vulkan::Vulkan vk-bootstrap glfw)
-
+    add_executable(test_vk_bindless
+        test/main.cpp
+        test/integration_tests.cpp
+        test/shader_compilation_tests.cpp
+    )
+    target_link_libraries(test_vk_bindless
+        VkBindless::VkBindless
+        doctest
+        Vulkan::Vulkan
+        vk-bootstrap
+        glfw
+    )
     add_test(NAME test_vk_bindless COMMAND test_vk_bindless)
 endif ()
 

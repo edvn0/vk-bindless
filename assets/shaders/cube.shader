@@ -6,6 +6,8 @@ layout(location = 2) out vec3 frag_tangent;
 layout(location = 3) out vec3 frag_bitangent;
 layout(location = 4) out vec2 frag_uv;
 
+
+
 // Static cube vertices (8 vertices)
 const vec3 cube_vertices[8] = vec3[](vec3(-0.5, -0.5, -0.5), // 0
                                      vec3(0.5, -0.5, -0.5),  // 1
@@ -189,6 +191,7 @@ const uint uv_mapping[36] = uint[](
 layout(push_constant) uniform PushConstants
 {
   mat4 mvp_matrix;
+vec4 light_direction;
 }
 pc;
 
@@ -239,16 +242,22 @@ layout(location = 3) in vec3 frag_bitangent;
 layout(location = 4) in vec2 frag_uv;
 layout(location = 0) out vec4 out_color;
 
+layout(push_constant) uniform PushConstants
+{
+  mat4 mvp_matrix; // 64
+  vec4 light_direction; // 16
+}
+pc;
+
 void
 main()
 {
   mat3 tbn = mat3(
     normalize(frag_tangent), normalize(frag_bitangent), normalize(frag_normal));
 
-  vec3 light_dir = normalize(vec3(1.0, 1.0, 1.0));
-  float ndotl = max(dot(frag_normal, light_dir), 0.0);
+  float ndotl = max(dot(frag_normal, vec3(pc.light_direction)), 0.0);
 
-  vec3 final_color = frag_color * (0.3 + 0.7 * ndotl);
+    vec4 texture_color = textureBindless2D(0, 0, frag_uv);
 
-  out_color = vec4(final_color, 1.0);
+  out_color = vec4(frag_color.rgb*texture_color.rgb, 1.0);
 }

@@ -26,7 +26,9 @@ enum class ShaderStage : std::uint8_t
   geometry,
   tessellation_control,
   tessellation_evaluation,
-  compute
+  compute,
+  task,
+  mesh
 };
 auto
 to_string(ShaderStage stage) -> std::string;
@@ -37,7 +39,7 @@ parse_shader_stage(std::string_view stage_str)
 struct ShaderEntry
 {
   ShaderStage stage;
-  std::string entry_name;
+  std::string entry_name {"main"};
   std::string source_code;
   std::size_t line_number{ 0 };
 };
@@ -50,12 +52,11 @@ struct ParsedShader
 
 class ShaderParser
 {
-private:
   struct PragmaInfo
   {
     ShaderStage stage;
-    std::string entry_name;
-    size_t line_number;
+    std::string entry_name {"main"};
+    std::size_t line_number;
   };
 
   static auto parse_pragma_line(std::string_view line, size_t line_number)

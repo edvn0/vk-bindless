@@ -24,7 +24,175 @@
 
 namespace VkBindless {
 
-static auto
+namespace {
+auto
+format_to_vk_format(const Format format) -> VkFormat
+{
+    switch (format) {
+    case Format::Invalid:
+        return VK_FORMAT_UNDEFINED;
+
+    case Format::R_UN8:   return VK_FORMAT_R8_UNORM;
+    case Format::R_UI16:  return VK_FORMAT_R16_UINT;
+    case Format::R_UI32:  return VK_FORMAT_R32_UINT;
+    case Format::R_UN16:  return VK_FORMAT_R16_UNORM;
+    case Format::R_F16:   return VK_FORMAT_R16_SFLOAT;
+    case Format::R_F32:   return VK_FORMAT_R32_SFLOAT;
+
+    case Format::RG_UN8:  return VK_FORMAT_R8G8_UNORM;
+    case Format::RG_UI16: return VK_FORMAT_R16G16_UINT;
+    case Format::RG_UI32: return VK_FORMAT_R32G32_UINT;
+    case Format::RG_UN16: return VK_FORMAT_R16G16_UNORM;
+    case Format::RG_F16:  return VK_FORMAT_R16G16_SFLOAT;
+    case Format::RG_F32:  return VK_FORMAT_R32G32_SFLOAT;
+
+    case Format::RGBA_UN8:   return VK_FORMAT_R8G8B8A8_UNORM;
+    case Format::RGBA_UI32:  return VK_FORMAT_R32G32B32A32_UINT;
+    case Format::RGBA_F16:   return VK_FORMAT_R16G16B16A16_SFLOAT;
+    case Format::RGBA_F32:   return VK_FORMAT_R32G32B32A32_SFLOAT;
+    case Format::RGBA_SRGB8: return VK_FORMAT_R8G8B8A8_SRGB;
+
+    case Format::BGRA_UN8:   return VK_FORMAT_B8G8R8A8_UNORM;
+    case Format::BGRA_SRGB8: return VK_FORMAT_B8G8R8A8_SRGB;
+
+    case Format::A2B10G10R10_UN: return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+    case Format::A2R10G10B10_UN: return VK_FORMAT_A2R10G10B10_UNORM_PACK32;
+
+    case Format::ETC2_RGB8:   return VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;
+    case Format::ETC2_SRGB8:  return VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK;
+    case Format::BC7_RGBA:    return VK_FORMAT_BC7_UNORM_BLOCK;
+
+    case Format::Z_UN16:      return VK_FORMAT_D16_UNORM;
+    case Format::Z_UN24:      return VK_FORMAT_X8_D24_UNORM_PACK32;
+    case Format::Z_F32:       return VK_FORMAT_D32_SFLOAT;
+    case Format::Z_UN24_S_UI8:return VK_FORMAT_D24_UNORM_S8_UINT;
+    case Format::Z_F32_S_UI8: return VK_FORMAT_D32_SFLOAT_S8_UINT;
+
+    case Format::YUV_NV12:    return VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+    case Format::YUV_420p:    return VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM;
+    }
+    return VK_FORMAT_UNDEFINED;
+}
+auto
+blend_factor_to_vk_blend_factor(BlendFactor blend_factor) -> VkBlendFactor
+{
+    switch (blend_factor) {
+    case BlendFactor::Zero:                 return VK_BLEND_FACTOR_ZERO;
+    case BlendFactor::One:                  return VK_BLEND_FACTOR_ONE;
+    case BlendFactor::SrcColor:             return VK_BLEND_FACTOR_SRC_COLOR;
+    case BlendFactor::OneMinusSrcColor:     return VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+    case BlendFactor::SrcAlpha:             return VK_BLEND_FACTOR_SRC_ALPHA;
+    case BlendFactor::OneMinusSrcAlpha:     return VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    case BlendFactor::DstColor:             return VK_BLEND_FACTOR_DST_COLOR;
+    case BlendFactor::OneMinusDstColor:     return VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+    case BlendFactor::DstAlpha:             return VK_BLEND_FACTOR_DST_ALPHA;
+    case BlendFactor::OneMinusDstAlpha:     return VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
+    case BlendFactor::SrcAlphaSaturated:    return VK_BLEND_FACTOR_SRC_ALPHA_SATURATE;
+    case BlendFactor::BlendColor:           return VK_BLEND_FACTOR_CONSTANT_COLOR;
+    case BlendFactor::OneMinusBlendColor:   return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
+    case BlendFactor::BlendAlpha:           return VK_BLEND_FACTOR_CONSTANT_ALPHA;
+    case BlendFactor::OneMinusBlendAlpha:   return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
+    case BlendFactor::Src1Color:            return VK_BLEND_FACTOR_SRC1_COLOR;
+    case BlendFactor::OneMinusSrc1Color:    return VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR;
+    case BlendFactor::Src1Alpha:            return VK_BLEND_FACTOR_SRC1_ALPHA;
+    case BlendFactor::OneMinusSrc1Alpha:    return VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA;
+    }
+    return VK_BLEND_FACTOR_ZERO;
+}
+
+auto
+blend_op_to_vk_blend_op(BlendOp blend_op) -> VkBlendOp
+{
+  switch (blend_op) {
+    case BlendOp::Add:
+      return VK_BLEND_OP_ADD;
+    case BlendOp::Subtract:
+      return VK_BLEND_OP_SUBTRACT;
+    case BlendOp::ReverseSubtract:
+      return VK_BLEND_OP_REVERSE_SUBTRACT;
+    case BlendOp::Min:
+      return VK_BLEND_OP_MIN;
+    case BlendOp::Max:
+      return VK_BLEND_OP_MAX;
+  }
+  return VK_BLEND_OP_ADD;
+}
+auto
+topology_to_vk_topology(Topology topology) -> VkPrimitiveTopology
+{
+    switch (topology) {
+    case Topology::Point:          return VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+    case Topology::Line:           return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    case Topology::LineStrip:      return VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
+    case Topology::Triangle:       return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    case Topology::TriangleStrip:  return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+    case Topology::Patch:          return VK_PRIMITIVE_TOPOLOGY_PATCH_LIST;
+    }
+    return VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
+}
+
+auto
+polygon_mode_to_vk_polygon_mode(PolygonMode polygon_mode) -> VkPolygonMode
+{
+    switch (polygon_mode) {
+    case PolygonMode::Fill: return VK_POLYGON_MODE_FILL;
+    case PolygonMode::Line: return VK_POLYGON_MODE_LINE;
+    }
+    return VK_POLYGON_MODE_FILL;
+}
+
+auto
+cull_mode_to_vk_cull_mode(CullMode cull_mode) -> VkCullModeFlags
+{
+    switch (cull_mode) {
+    case CullMode::None:  return VK_CULL_MODE_NONE;
+    case CullMode::Front: return VK_CULL_MODE_FRONT_BIT;
+    case CullMode::Back:  return VK_CULL_MODE_BACK_BIT;
+    }
+    return VK_CULL_MODE_NONE;
+}
+
+auto
+winding_to_vk_winding(WindingMode winding) -> VkFrontFace
+{
+    switch (winding) {
+    case WindingMode::CCW: return VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    case WindingMode::CW:  return VK_FRONT_FACE_CLOCKWISE;
+    }
+    return VK_FRONT_FACE_COUNTER_CLOCKWISE;
+}
+
+auto
+stencil_op_to_vk_stencil_op(StencilOp stencil_op) -> VkStencilOp
+{
+    switch (stencil_op) {
+    case StencilOp::Keep:           return VK_STENCIL_OP_KEEP;
+    case StencilOp::Zero:           return VK_STENCIL_OP_ZERO;
+    case StencilOp::Replace:        return VK_STENCIL_OP_REPLACE;
+    case StencilOp::IncrementClamp: return VK_STENCIL_OP_INCREMENT_AND_CLAMP;
+    case StencilOp::DecrementClamp: return VK_STENCIL_OP_DECREMENT_AND_CLAMP;
+    case StencilOp::Invert:         return VK_STENCIL_OP_INVERT;
+    case StencilOp::IncrementWrap:  return VK_STENCIL_OP_INCREMENT_AND_WRAP;
+    case StencilOp::DecrementWrap:  return VK_STENCIL_OP_DECREMENT_AND_WRAP;
+    }
+    return VK_STENCIL_OP_KEEP;
+}
+
+auto compare_op_to_vk_compare_op(CompareOp compare_op) -> VkCompareOp {
+    switch (compare_op) {
+    case CompareOp::Never:        return VK_COMPARE_OP_NEVER;
+    case CompareOp::Less:         return VK_COMPARE_OP_LESS;
+    case CompareOp::Equal:        return VK_COMPARE_OP_EQUAL;
+    case CompareOp::LessEqual:    return VK_COMPARE_OP_LESS_OR_EQUAL;
+    case CompareOp::Greater:      return VK_COMPARE_OP_GREATER;
+    case CompareOp::NotEqual:     return VK_COMPARE_OP_NOT_EQUAL;
+    case CompareOp::GreaterEqual: return VK_COMPARE_OP_GREATER_OR_EQUAL;
+    case CompareOp::AlwaysPass:   return VK_COMPARE_OP_ALWAYS;
+    }
+    return VK_COMPARE_OP_ALWAYS;
+}
+
+auto
 create_timeline_semaphore(const VkDevice device,
                           const std::uint64_t initial_value) -> VkSemaphore
 {
@@ -50,6 +218,8 @@ constexpr VkShaderStageFlags all_stages_flags =
   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT |
   VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
   VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+}
+
 
 Context::~Context()
 {
@@ -834,7 +1004,7 @@ auto
 Context::submit(ICommandBuffer& cmd_buffer, const TextureHandle present)
   -> Expected<SubmitHandle, std::string>
 {
-  auto& vk_buffer = dynamic_cast<CommandBuffer&>(cmd_buffer);
+  const auto& vk_buffer = dynamic_cast<CommandBuffer&>(cmd_buffer);
 
 #if defined(LVK_WITH_TRACY_GPU)
   TracyVkCollect(pimpl_->tracyVkCtx_, vk_buffer.get_command_buffer());
@@ -887,6 +1057,325 @@ auto
 Context::get_current_swapchain_texture() -> TextureHandle
 {
   return swapchain->current_texture();
+}
+
+
+auto
+Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask) -> VkPipeline
+{
+  auto* rps = *get_graphics_pipeline_pool().get(handle);
+
+  if (!rps) {
+    return VK_NULL_HANDLE;
+  }
+
+  if (rps->last_descriptor_set_layout != descriptor_set_layout ||
+      rps->view_mask != viewMask) {
+    pre_frame_task(
+      [l = rps->get_layout()](auto dev, auto callbacks) {
+        vkDestroyPipelineLayout(dev, l, callbacks);
+      });
+    pre_frame_task([p = rps->get_pipeline()](auto dev, auto callbacks) {
+      vkDestroyPipeline(dev, p, callbacks);
+    });
+
+    rps->pipeline = VK_NULL_HANDLE;
+    rps->last_descriptor_set_layout = descriptor_set_layout;
+    rps->view_mask = viewMask;
+  }
+
+  if (rps->pipeline != VK_NULL_HANDLE) {
+    return rps->pipeline;
+  }
+
+  // build a new Vulkan pipeline
+
+  VkPipelineLayout layout = VK_NULL_HANDLE;
+  VkPipeline pipeline = VK_NULL_HANDLE;
+
+  const auto& desc = rps->description;
+
+  const auto colour_attachments_count =
+    rps->description.get_colour_attachments_count();
+
+  // Not all attachments are valid. We need to create color blend attachments
+  // only for active attachments
+  std::array<VkPipelineColorBlendAttachmentState, max_colour_attachments>
+    color_blend_attachment_states{};
+  std::array<VkFormat, max_colour_attachments> color_attachment_formats {};
+
+  for (auto i = 0U; i != colour_attachments_count; i++) {
+    const auto& [format,
+                 blend_enabled,
+                 rgb_blend_op,
+                 alpha_blend_op,
+                 src_rgb_blend_factor,
+                 src_alpha_blend_factor,
+                 dst_rgb_blend_factor,
+                 dst_alpha_blend_factor] = desc.color[i];
+    assert(format != Format::Invalid);
+    color_attachment_formats[i] = format_to_vk_format(format);
+    if (!blend_enabled) {
+      color_blend_attachment_states[i] = VkPipelineColorBlendAttachmentState{
+        .blendEnable = VK_FALSE,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+      };
+    } else {
+      color_blend_attachment_states[i] = VkPipelineColorBlendAttachmentState{
+        .blendEnable = VK_TRUE,
+        .srcColorBlendFactor =
+          blend_factor_to_vk_blend_factor(src_rgb_blend_factor),
+        .dstColorBlendFactor =
+          blend_factor_to_vk_blend_factor(dst_rgb_blend_factor),
+        .colorBlendOp = blend_op_to_vk_blend_op(rgb_blend_op),
+        .srcAlphaBlendFactor =
+          blend_factor_to_vk_blend_factor(src_alpha_blend_factor),
+        .dstAlphaBlendFactor =
+          blend_factor_to_vk_blend_factor(dst_alpha_blend_factor),
+        .alphaBlendOp = blend_op_to_vk_blend_op(alpha_blend_op),
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+      };
+    }
+  }
+
+  const auto* shader = *get_shader_module_pool().get(desc.shader);
+
+  assert(shader);
+
+  /*  if (tescModule || teseModule || desc.patchControlPoints) {
+      LVK_ASSERT_MSG(tescModule && teseModule, "Both tessellation control and
+    evaluation shaders should be provided"); LVK_ASSERT(desc.patchControlPoints
+    > 0 && desc.patchControlPoints <=
+    vkPhysicalDeviceProperties2_.properties.limits.maxTessellationPatchSize);
+    }
+  */
+  const VkPipelineVertexInputStateCreateInfo ciVertexInputState = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+    .vertexBindingDescriptionCount = rps->binding_count,
+    .pVertexBindingDescriptions =
+      rps->binding_count > 0 ? rps->bindings.data() : nullptr,
+    .vertexAttributeDescriptionCount = rps->attribute_count,
+    .pVertexAttributeDescriptions =
+      rps->attribute_count > 0 ? rps->attributes.data() : nullptr,
+  };
+
+  std::array<VkSpecializationMapEntry, SpecialisationConstantDescription::max_specialization_constants> entries{};
+
+  static constexpr auto get_pipeline_specialisation_info = [](const SpecialisationConstantDescription& desc,
+                                                    auto& spec_entries) {
+      const auto num_entries = desc.get_specialisation_constants_count();
+    for (auto i = 0U; i < num_entries; ++i) {
+        const auto& [constant_id, offset, size] = desc.entries.at(i);
+      spec_entries[i] = VkSpecializationMapEntry{
+        .constantID = constant_id,
+        .offset = offset,
+        .size = size,
+      };
+    }
+
+    return VkSpecializationInfo{
+      .mapEntryCount = num_entries,
+      .pMapEntries = spec_entries.data(),
+      .dataSize = desc.data.size_bytes(),
+      .pData = desc.data.data(),
+    };
+  };
+
+  const VkSpecializationInfo si = get_pipeline_specialisation_info(
+    desc.specialisation_constants, entries);
+
+  // create pipeline layout
+  {
+    auto&& [size, flags] = shader->get_push_constant_info();
+
+    static constexpr auto get_aligned_size = [](const auto s,
+                                                const auto alignment) {
+      return (s + alignment - 1) & ~(alignment - 1);
+    };
+
+    // duplicate for MoltenVK
+    const VkDescriptorSetLayout dsls[] = { descriptor_set_layout,
+                                           descriptor_set_layout,
+                                           descriptor_set_layout, descriptor_set_layout };
+    auto min_align = vulkan_properties.base.limits.minUniformBufferOffsetAlignment;
+
+    const VkPushConstantRange range = {
+      .stageFlags = rps->stage_flags,
+      .offset = 0,
+      .size = static_cast<uint32_t>(get_aligned_size(size, min_align)),
+    };
+    const VkPipelineLayoutCreateInfo ci = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+      .setLayoutCount = static_cast<std::uint32_t>(std::size(dsls)),
+      .pSetLayouts = dsls,
+      .pushConstantRangeCount = size ? 1u : 0u,
+      .pPushConstantRanges = size ? &range : nullptr,
+    };
+    vkCreatePipelineLayout(get_device(), &ci, nullptr, &layout);
+    set_name_for_object(
+      get_device(),
+      VK_OBJECT_TYPE_PIPELINE_LAYOUT,
+      layout,
+      std::format("Pipeline_Layout_{}",
+                  !desc.debug_name.empty() ? desc.debug_name : "Unnamed"));
+  }
+
+  std::array dynamic_states = {
+    VK_DYNAMIC_STATE_VIEWPORT,          VK_DYNAMIC_STATE_SCISSOR,
+    VK_DYNAMIC_STATE_DEPTH_BIAS,        VK_DYNAMIC_STATE_BLEND_CONSTANTS,
+    VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE, VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE,
+    VK_DYNAMIC_STATE_DEPTH_COMPARE_OP,  VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE
+  };
+
+  VkPipelineDynamicStateCreateInfo ci_dynamic{};
+  ci_dynamic.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+  ci_dynamic.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
+  ci_dynamic.pDynamicStates = dynamic_states.data();
+
+  VkPipelineInputAssemblyStateCreateInfo ci_ia{};
+  ci_ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+  ci_ia.topology = topology_to_vk_topology(desc.topology);
+
+  VkPipelineRasterizationStateCreateInfo ci_rs{};
+  ci_rs.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+  ci_rs.polygonMode = polygon_mode_to_vk_polygon_mode(desc.polygon_mode);
+  ci_rs.cullMode = cull_mode_to_vk_cull_mode(desc.cull_mode);
+  ci_rs.frontFace = winding_to_vk_winding(desc.winding);
+  ci_rs.depthBiasEnable = VK_FALSE;
+  ci_rs.lineWidth = 1.0f;
+
+  auto getVulkanSampleCountFlags = [](const uint32_t sample_count, VkSampleCountFlags max_samples_mask) {
+    if (sample_count <= 1 || VK_SAMPLE_COUNT_2_BIT > max_samples_mask) {
+      return VK_SAMPLE_COUNT_1_BIT;
+    }
+    if (sample_count <= 2 || VK_SAMPLE_COUNT_4_BIT > max_samples_mask) {
+      return VK_SAMPLE_COUNT_2_BIT;
+    }
+    if (sample_count <= 4 || VK_SAMPLE_COUNT_8_BIT > max_samples_mask) {
+      return VK_SAMPLE_COUNT_4_BIT;
+    }
+    if (sample_count <= 8 || VK_SAMPLE_COUNT_16_BIT > max_samples_mask) {
+      return VK_SAMPLE_COUNT_8_BIT;
+    }
+    if (sample_count <= 16 || VK_SAMPLE_COUNT_32_BIT > max_samples_mask) {
+      return VK_SAMPLE_COUNT_16_BIT;
+    }
+    if (sample_count <= 32 || VK_SAMPLE_COUNT_64_BIT > max_samples_mask) {
+      return VK_SAMPLE_COUNT_32_BIT;
+    }
+    return VK_SAMPLE_COUNT_64_BIT;
+  };
+
+  auto limits = vulkan_properties.base.limits.framebufferColorSampleCounts &
+                vulkan_properties.base.limits.framebufferDepthSampleCounts;
+
+  VkSampleCountFlagBits samples =
+    getVulkanSampleCountFlags(desc.sample_count, limits);
+  VkPipelineMultisampleStateCreateInfo ci_ms{};
+  ci_ms.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+  ci_ms.rasterizationSamples = samples;
+  ci_ms.sampleShadingEnable = desc.min_sample_shading > 0.0f ? VK_TRUE : VK_FALSE;
+  ci_ms.minSampleShading = desc.min_sample_shading;
+
+  VkStencilOpState front{};
+  front.failOp = stencil_op_to_vk_stencil_op(desc.front_face_stencil.stencil_failure_operation);
+  front.passOp =
+    stencil_op_to_vk_stencil_op(desc.front_face_stencil.depth_stencil_pass_operation);
+  front.depthFailOp =
+    stencil_op_to_vk_stencil_op(desc.front_face_stencil.depth_failure_operation);
+  front.compareOp =
+    compare_op_to_vk_compare_op(desc.front_face_stencil.stencil_compare_op);
+  front.compareMask = desc.front_face_stencil.read_mask;
+  front.writeMask = desc.front_face_stencil.write_mask;
+  front.reference = 0xFF;
+
+  VkStencilOpState back{};
+  back.failOp = stencil_op_to_vk_stencil_op(desc.back_face_stencil.stencil_failure_operation);
+  back.passOp = stencil_op_to_vk_stencil_op(desc.back_face_stencil.depth_stencil_pass_operation);
+  back.depthFailOp =
+    stencil_op_to_vk_stencil_op(desc.back_face_stencil.depth_failure_operation);
+  back.compareOp =
+    compare_op_to_vk_compare_op(desc.back_face_stencil.stencil_compare_op);
+  back.compareMask = desc.back_face_stencil.read_mask;
+  back.writeMask = desc.back_face_stencil.write_mask;
+  back.reference = 0xFF;
+
+  VkPipelineDepthStencilStateCreateInfo ci_ds{};
+  ci_ds.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+  ci_ds.depthTestEnable = VK_TRUE;                    // dynamic
+  ci_ds.depthWriteEnable = VK_TRUE;                   // dynamic
+  ci_ds.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL; // dynamic
+  ci_ds.depthBoundsTestEnable = VK_FALSE;
+  ci_ds.stencilTestEnable =
+    (desc.front_face_stencil.enabled || desc.back_face_stencil.enabled) ? VK_TRUE
+                                                                    : VK_FALSE;
+  ci_ds.front = front;
+  ci_ds.back = back;
+
+  VkPipelineViewportStateCreateInfo ci_vs{};
+  ci_vs.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+  ci_vs.viewportCount = 1;
+  ci_vs.scissorCount = 1;
+
+  VkPipelineColorBlendStateCreateInfo ci_cb{};
+  ci_cb.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+  ci_cb.attachmentCount = colour_attachments_count;
+  ci_cb.pAttachments = color_blend_attachment_states.data();
+
+  VkPipelineTessellationStateCreateInfo ci_ts{};
+  bool has_tess = (shader->has_stage(ShaderStage::tessellation_control) &&
+                   shader->has_stage(ShaderStage::tessellation_evaluation)) &&
+                  desc.patch_control_points > 0;
+  if (has_tess) {
+    ci_ts.sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO;
+    ci_ts.patchControlPoints = desc.patch_control_points;
+  }
+
+  std::vector<VkPipelineShaderStageCreateInfo> stages;
+  shader->populate_stages(stages, si);
+
+  VkPipelineRenderingCreateInfo ci_rendering{};
+  ci_rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+  ci_rendering.viewMask = viewMask;
+  ci_rendering.colorAttachmentCount = colour_attachments_count;
+  ci_rendering.pColorAttachmentFormats = color_attachment_formats.data();
+  ci_rendering.depthAttachmentFormat = format_to_vk_format(desc.depth_format);
+  ci_rendering.stencilAttachmentFormat = format_to_vk_format(desc.stencil_format);
+
+  VkGraphicsPipelineCreateInfo ci_gp{};
+  ci_gp.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+  ci_gp.pNext = &ci_rendering;
+  ci_gp.stageCount = static_cast<uint32_t>(stages.size());
+  ci_gp.pStages = stages.data();
+  ci_gp.pVertexInputState = &ciVertexInputState;
+  ci_gp.pInputAssemblyState = &ci_ia;
+  ci_gp.pViewportState = &ci_vs;
+  ci_gp.pRasterizationState = &ci_rs;
+  ci_gp.pMultisampleState = &ci_ms;
+  ci_gp.pDepthStencilState = &ci_ds;
+  ci_gp.pColorBlendState = &ci_cb;
+  ci_gp.pDynamicState = &ci_dynamic;
+  ci_gp.pTessellationState = has_tess ? &ci_ts : nullptr;
+  ci_gp.layout = layout;
+
+  if (const auto res = vkCreateGraphicsPipelines(
+        get_device(), nullptr, 1, &ci_gp, nullptr, &pipeline);
+      res != VK_SUCCESS) {
+    return VK_NULL_HANDLE;
+  }
+
+  rps->pipeline = pipeline;
+  rps->layout = layout;
+
+  return pipeline;
 }
 
 #pragma region Destroyers

@@ -7,10 +7,14 @@
 #include "vk-bindless/vulkan_context.hpp"
 
 #define GLFW_INCLUDE_VULKAN
+#include "glm/ext/matrix_clip_space.hpp"
+#include "glm/ext/matrix_transform.hpp"
+
 #include <GLFW/glfw3.h>
 
 #include <bit>
 #include <cstdint>
+#include <glm/glm.hpp>
 #include <format>
 #include <iostream>
 
@@ -31,14 +35,6 @@ struct WindowState
   std::int32_t windowed_height{};
   bool fullscreen{ false };
 };
-
-template<typename T>
-  requires std::is_pointer_v<T>
-static auto
-launder_cast(const void* ptr)
-{
-  return std::bit_cast<T>(ptr);
-}
 
 static auto
 is_wayland() -> bool
@@ -128,7 +124,7 @@ private:
   }
 };
 
-class GameLogicHandler : public EventSystem::EventHandler
+class GameLogicHandler final : public EventSystem::EventHandler
 {
 public:
   [[nodiscard]] auto get_priority() const -> int override { return 100; }
@@ -164,7 +160,7 @@ protected:
 };
 
 // UI handler (lower priority than game logic)
-class UIHandler
+class UIHandler final
   : public EventSystem::TypedEventHandler<EventSystem::KeyEvent,
                                           EventSystem::MouseButtonEvent>
 {
@@ -198,10 +194,10 @@ protected:
 };
 
 static auto
-setup_event_callbacks(GLFWwindow* window,
-                      EventSystem::EventDispatcher* dispatcher) -> void
+setup_event_callbacks(GLFWwindow* window, EventSystem::EventDispatcher* d)
+  -> void
 {
-  glfwSetWindowUserPointer(window, dispatcher);
+  glfwSetWindowUserPointer(window, d);
 
   glfwSetKeyCallback(
     window, [](GLFWwindow* win, int key, int scancode, int action, int mods) {
@@ -276,7 +272,7 @@ main() -> std::int32_t
 
   auto context = Context::create([win = window.get()](VkInstance instance) {
     VkSurfaceKHR surface;
-    if (auto res = glfwCreateWindowSurface(instance, win, nullptr, &surface);
+    if (const auto res = glfwCreateWindowSurface(instance, win, nullptr, &surface);
         res != VK_SUCCESS) {
       return as_null(surface);
     }
@@ -329,13 +325,36 @@ main() -> std::int32_t
         ColourAttachment{
           .format = Format::BGRA_UN8,
         },
-      } });
+      },
+    .depth_format = Format::Z_F32,});
 
   SCOPE_EXIT
   {
     shader.reset();
     cube_pipeline_handle.reset();
   };
+
+  auto depth_texture = VkTexture::create(*vulkan_context, {
+  .data = {},
+  .format = VK_FORMAT_D32_SFLOAT,
+  .extent = {
+    .width = static_cast<std::uint32_t>(initial_width),
+    .height = static_cast<std::uint32_t>(initial_height),
+    .depth = 1,
+  },
+  .usage_flags =
+    TextureUsageFlags::DepthStencilAttachment | TextureUsageFlags::Sampled,
+  .layers = 1,
+  .mip_levels = 1,
+  .sample_count = VK_SAMPLE_COUNT_1_BIT,
+  .tiling = VK_IMAGE_TILING_OPTIMAL,
+  .initial_layout =
+    VK_IMAGE_LAYOUT_UNDEFINED, // Initial layout for depth texture
+  .is_owning = true,
+  .is_swapchain = false,
+  .externally_created_image = {},
+  .debug_name = "Depth Texture",
+  });
 
   while (!glfwWindowShouldClose(window.get())) {
     event_dispatcher.process_events();
@@ -351,7 +370,11 @@ main() -> std::int32_t
   .load_op = LoadOp::Clear,
         .clear_colour = std::array{1.0F, 0.0F, 0.0F, 1.0F},
       }, },
-      .depth ={},
+      .depth ={
+        .load_op = LoadOp::Clear,
+        .store_op = StoreOp::Store,
+        .clear_depth = 0.0F,
+      },
       .stencil =  {},
     .layer_count = 1,
       .view_mask = 0,
@@ -360,12 +383,47 @@ main() -> std::int32_t
     Framebuffer framebuffer{
       .color = { Framebuffer::AttachmentDescription{
           .texture = swapchain_texture, }, },
-      .depth_stencil = {},
+      .depth_stencil = {.texture = *depth_texture,},
       .debug_name = "Main Framebuffer",
     };
+
     buf.cmd_begin_rendering(render_pass, framebuffer, {});
+    struct PC
+    {
+      glm::mat4 mvp{1.0F};
+      glm::vec4 light_direction{0.0F};
+    } pc{};
+    // angles in radians
+    const auto phi = glm::radians(200.0F);
+        const auto theta = glm::radians(30.0F);
+
+    // spherical → Cartesian
+    glm::vec3 dir;
+    dir.x = std::cos(phi) * std::cos(theta);
+    dir.y = std::sin(phi);
+    dir.z = std::cos(phi) * std::sin(theta);
+
+    // normalize for safety
+    dir   = glm::normalize(dir);
+
+    // store in push constants
+    pc.light_direction = glm::vec4(dir, 0.0f); // w=0 for a direction
+    const auto view = glm::lookAt(glm::vec3(0.0F, 0.0F, 3.0F),
+                                  glm::vec3(0.0F, 0.0F, 0.0F),
+                                  glm::vec3(0.0F, 1.0F, 0.0F));
+    const auto projection = glm::perspective(
+      glm::radians(70.0F), static_cast<float>(new_width) / static_cast<float>(new_height), 0.1F,
+      1000.0F);
+
+      const auto mvp = projection * view;
+  const auto angle = static_cast<float>(glfwGetTime());
+  const auto rotation = glm::rotate(glm::mat4(1.0F), angle, glm::vec3(0.0F, 1.0F, 0.0F));
+  pc.mvp = mvp * rotation;
+
     buf.cmd_bind_graphics_pipeline(*cube_pipeline_handle);
-    // buf.cmd_draw(36, 1, 0, 0);
+    buf.cmd_bind_depth_state({.compare_operation =  CompareOp::Greater, .is_depth_write_enabled = true,});
+    buf.cmd_push_constants<PC>(pc, 0);
+    buf.cmd_draw(36, 1, 0, 0);
     buf.cmd_end_rendering();
     const auto result = vulkan_context->submit(buf, swapchain_texture);
   }

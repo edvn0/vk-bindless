@@ -149,23 +149,100 @@ ShaderParser::prepend_preamble(ParsedShader& parsed) -> bool
   static const std::string extension_line =
     "#extension GL_GOOGLE_include_directive : enable";
 
+  auto assert_does_not_have_version_or_extensions = [](const std::string& src) {
+    if (src.find("#version") != std::string::npos) {
+      std::cerr << "Shader source already contains a #version directive.\n";
+      return false;
+    }
+    if (src.find("#extension") != std::string::npos) {
+      std::cerr << "Shader source already contains an #extension directive.\n";
+      return false;
+    }
+    return true;
+  };
+
   for (auto& entry : parsed.entries) {
+    if (!assert_does_not_have_version_or_extensions(entry.source_code)) {
+      return false;
+    }
+
     auto& src = entry.source_code;
 
-    // Ensure #version exists
-    if (src.find("#version") == std::string::npos) {
-      src = version_line + "\n" + extension_line + "\n" + src;
-    } else {
-      // Ensure the extension exists (after #version)
-      if (src.find(extension_line) == std::string::npos) {
-        auto pos = src.find("\n"); // end of first line (#version ...)
-        if (pos != std::string::npos) {
-          src.insert(pos + 1, extension_line + "\n");
-        } else {
-          // Degenerate case: only "#version ..." with no newline
-          src += "\n" + extension_line + "\n";
-        }
+    auto type = entry.stage;
+
+    if (type == ShaderStage::task || type == ShaderStage::mesh) {
+      constexpr auto append =
+        R"(
+      #version 460
+      #extension GL_EXT_buffer_reference : require
+      #extension GL_EXT_buffer_reference_uvec2 : require
+      #extension GL_EXT_debug_printf : enable
+      #extension GL_EXT_nonuniform_qualifier : require
+      #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+      #extension GL_EXT_mesh_shader : require
+
+)";
+      src = append + src;
+    } else if (type == ShaderStage::compute || type == ShaderStage::vertex ||
+               type == ShaderStage::tessellation_control ||
+               type == ShaderStage::tessellation_evaluation) {
+      constexpr auto append =
+        R"(
+      #version 460
+      #extension GL_EXT_buffer_reference : require
+      #extension GL_EXT_buffer_reference_uvec2 : require
+      #extension GL_EXT_debug_printf : enable
+      #extension GL_EXT_nonuniform_qualifier : require
+      #extension GL_EXT_samplerless_texture_functions : require
+      #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+)";
+      src = append + src;
+    } else if (type == ShaderStage::fragment) {
+      constexpr auto append =
+        R"(
+      #version 460
+      #extension GL_EXT_buffer_reference_uvec2 : require
+      #extension GL_EXT_debug_printf : enable
+      #extension GL_EXT_nonuniform_qualifier : require
+      #extension GL_EXT_samplerless_texture_functions : require
+      #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+
+      layout (set = 0, binding = 0) uniform texture2D textures_2d[];
+      layout (set = 1, binding = 0) uniform texture3D textures_3d[];
+      layout (set = 2, binding = 0) uniform textureCube texture_cubes[];
+      layout (set = 3, binding = 0) uniform texture2D textures_2d_shadow[];
+      layout (set = 0, binding = 1) uniform sampler samplers[];
+      layout (set = 3, binding = 1) uniform samplerShadow shadow_samplers[];
+
+      layout (set = 0, binding = 3) uniform sampler2D sampler_yuv[];
+
+      vec4 textureBindless2D(uint textureid, uint samplerid, vec2 uv) {
+        return texture(nonuniformEXT(sampler2D(textures_2d[textureid], samplers[samplerid])), uv);
       }
+      vec4 textureBindless2DLod(uint textureid, uint samplerid, vec2 uv, float lod) {
+        return textureLod(nonuniformEXT(sampler2D(textures_2d[textureid], samplers[samplerid])), uv, lod);
+      }
+      float textureBindless2DShadow(uint textureid, uint samplerid, vec3 uvw) {
+        return texture(nonuniformEXT(sampler2DShadow(textures_2d_shadow[textureid], shadow_samplers[samplerid])), uvw);
+      }
+      ivec2 textureBindlessSize2D(uint textureid) {
+        return textureSize(nonuniformEXT(textures_2d[textureid]), 0);
+      }
+      vec4 textureBindlessCube(uint textureid, uint samplerid, vec3 uvw) {
+        return texture(nonuniformEXT(samplerCube(texture_cubes[textureid], samplers[samplerid])), uvw);
+      }
+      vec4 textureBindlessCubeLod(uint textureid, uint samplerid, vec3 uvw, float lod) {
+        return textureLod(nonuniformEXT(samplerCube(texture_cubes[textureid], samplers[samplerid])), uvw, lod);
+      }
+      int textureBindlessQueryLevels2D(uint textureid) {
+        return textureQueryLevels(nonuniformEXT(textures_2d[textureid]));
+      }
+      int textureBindlessQueryLevelsCube(uint textureid) {
+        return textureQueryLevels(nonuniformEXT(texture_cubes[textureid]));
+      }
+)";
+
+      src = append + src;
     }
   }
   return true;

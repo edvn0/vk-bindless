@@ -90,7 +90,9 @@ VkTexture::VkTexture(IContext& ctx, const VkTextureDescription& description)
   , sampled{ static_cast<bool>(description.usage_flags &
                                TextureUsageFlags::Sampled) }
   , storage{ static_cast<bool>(description.usage_flags &
-                               TextureUsageFlags::Storage) }
+                               TextureUsageFlags::Storage) },
+is_depth{ static_cast<bool>(description.usage_flags &
+                               TextureUsageFlags::DepthStencilAttachment) }
 {
   if (!description.externally_created_image) {
     create_internal_image(ctx, description);
@@ -110,7 +112,9 @@ VkTexture::VkTexture(IContext& ctx, const VkTextureDescription& description)
                          ? VK_IMAGE_VIEW_TYPE_CUBE
                          : VK_IMAGE_VIEW_TYPE_2D;
   view_info.format = description.format;
-  view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  view_info.subresourceRange.aspectMask = is_depth
+                                           ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                           : VK_IMAGE_ASPECT_COLOR_BIT;
   view_info.subresourceRange.baseMipLevel = 0;
   view_info.subresourceRange.levelCount = mip_levels;
   view_info.subresourceRange.baseArrayLayer = 0;
@@ -222,7 +226,9 @@ VkTexture::get_or_create_framebuffer_view(IContext& context,
       .a = VK_COMPONENT_SWIZZLE_A,
     },
     .subresourceRange = {
-      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      .aspectMask = is_depth
+                     ? (VkImageAspectFlags)VK_IMAGE_ASPECT_DEPTH_BIT
+                     : (VkImageAspectFlags)VK_IMAGE_ASPECT_COLOR_BIT,
       .baseMipLevel = mip,
       .levelCount = 1,
       .baseArrayLayer = layer,
@@ -235,8 +241,8 @@ VkTexture::get_or_create_framebuffer_view(IContext& context,
     &view_info,
     nullptr,
     &cached_framebuffer_views[mip * cube_array_layers + layer]));
-  auto name = std::format("Framebuffer_({})_view (mip: {}, layer: {})",
-                          (const void*)image,
+  const auto name = std::format("Framebuffer_({})_view (mip: {}, layer: {})",
+                          static_cast<const void*>(image),
                           mip,
                           layer);
   set_name_for_object(

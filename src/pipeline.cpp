@@ -191,6 +191,13 @@ vertex_format_to_vk_format(VertexFormat fmt)
 }
 
 auto
+VkGraphicsPipeline::get_stage_flags() const -> VkShaderStageFlags
+{
+  return stage_flags;
+}
+
+
+auto
 VkGraphicsPipeline::create(IContext* context,
                            const GraphicsPipelineDescription& desc)
   -> Holder<GraphicsPipelineHandle>
@@ -244,6 +251,11 @@ VkGraphicsPipeline::create(IContext* context,
       std::span<std::byte>(pipeline.specialisation_constants_storage.get(),
                            desc.specialisation_constants.data.size());
   }
+
+  pipeline.stage_flags = context->get_shader_module_pool()
+    .get(desc.shader).transform([](const auto* shader) {
+      return shader->get_shader_stage_flags();
+    }).value_or(VK_SHADER_STAGE_ALL_GRAPHICS);
 
   return Holder{
     context,

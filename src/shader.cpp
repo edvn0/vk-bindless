@@ -8,73 +8,11 @@
 
 #include <glslang/Include/glslang_c_interface.h>
 #include <glslang/Public/resource_limits_c.h>
+#include <iostream>
 
-namespace VkBindless {
-namespace {
-auto
-to_glslang_stage(ShaderStage stage) -> glslang_stage_t
-{
-  switch (stage) {
-    case ShaderStage::vertex:
-      return GLSLANG_STAGE_VERTEX;
-    case ShaderStage::fragment:
-      return GLSLANG_STAGE_FRAGMENT;
-    case ShaderStage::geometry:
-      return GLSLANG_STAGE_GEOMETRY;
-    case ShaderStage::tessellation_control:
-      return GLSLANG_STAGE_TESSCONTROL;
-    case ShaderStage::tessellation_evaluation:
-      return GLSLANG_STAGE_TESSEVALUATION;
-    case ShaderStage::compute:
-      return GLSLANG_STAGE_COMPUTE;
-  }
-  return GLSLANG_STAGE_VERTEX; // fallback
-}
-}
+#include <spirv_reflect.h>
 
-auto
-VkShader::create(IContext* context, const std::filesystem::path& path)
-  -> Holder<ShaderModuleHandle>
-{
-  auto& pool = context->get_shader_module_pool();
-
-  auto compiled = VkShader::compile(context, path);
-  if (!compiled) {
-    return Holder<ShaderModuleHandle>::invalid();
-  }
-
-  auto handle = pool.create(std::move(compiled.value()));
-
-  if (!handle.valid()) {
-    return Holder<ShaderModuleHandle>::invalid();
-  }
-
-  return Holder{ context, std::move(handle) };
-}
-
-auto
-VkShader::compile(IContext* context, const std::filesystem::path& path)
-  -> std::expected<VkShader, std::string>
-{
-  auto stream = std::ifstream{ path };
-  if (!stream) {
-    return std::unexpected("Failed to open shader file: " + path.string());
-  }
-
-  std::string source_code((std::istreambuf_iterator<char>(stream)),
-                          std::istreambuf_iterator<char>());
-  auto parsed = ShaderParser::parse(source_code);
-  if (!parsed) {
-    auto error = std::format("Failed to parse shader: {}",
-                             ShaderUtils::error_to_string(parsed.error()));
-    return std::unexpected(error);
-  }
-
-  if (!ShaderParser::prepend_preamble(*parsed)) {
-    return std::unexpected("Failed to prepend shader preamble");
-  }
-
-  static constexpr glslang_resource_t
+static constexpr glslang_resource_t
     default_resource = { .max_lights = 32,
                          .max_clip_planes = 6,
                          .max_texture_units = 32,
@@ -190,7 +128,77 @@ VkShader::compile(IContext* context, const std::filesystem::path& path)
                            .general_constant_matrix_vector_indexing = 1,
                          }, };
 
+namespace VkBindless {
+namespace {
+auto
+to_glslang_stage(const ShaderStage stage) -> glslang_stage_t
+{
+  switch (stage) {
+    case ShaderStage::vertex:
+      return GLSLANG_STAGE_VERTEX;
+    case ShaderStage::fragment:
+      return GLSLANG_STAGE_FRAGMENT;
+    case ShaderStage::geometry:
+      return GLSLANG_STAGE_GEOMETRY;
+    case ShaderStage::tessellation_control:
+      return GLSLANG_STAGE_TESSCONTROL;
+    case ShaderStage::tessellation_evaluation:
+      return GLSLANG_STAGE_TESSEVALUATION;
+    case ShaderStage::compute:
+      return GLSLANG_STAGE_COMPUTE;
+    default:
+      std::cerr << "Unknown shader stage: " << to_string(stage) << std::endl;
+      return GLSLANG_STAGE_VERTEX; // fallback to vertex stage
+  }
+  return GLSLANG_STAGE_VERTEX; // fallback
+}
+}
+
+auto
+VkShader::create(IContext* context, const std::filesystem::path& path)
+  -> Holder<ShaderModuleHandle>
+{
+  auto& pool = context->get_shader_module_pool();
+
+  auto compiled = VkShader::compile(context, path);
+  if (!compiled) {
+    return Holder<ShaderModuleHandle>::invalid();
+  }
+
+  const auto handle = pool.create(std::move(compiled.value()));
+
+  if (!handle.valid()) {
+    return Holder<ShaderModuleHandle>::invalid();
+  }
+
+  return Holder{ context, handle };
+}
+
+auto
+VkShader::compile(IContext* context, const std::filesystem::path& path)
+  -> std::expected<VkShader, std::string>
+{
+  auto stream = std::ifstream{ path };
+  if (!stream) {
+    return std::unexpected("Failed to open shader file: " + path.string());
+  }
+
+  std::string source_code((std::istreambuf_iterator<char>(stream)),
+                          std::istreambuf_iterator<char>());
+  auto parsed = ShaderParser::parse(source_code);
+  if (!parsed) {
+    auto error = std::format("Failed to parse shader: {}",
+                             ShaderUtils::error_to_string(parsed.error()));
+    return std::unexpected(error);
+  }
+
+  if (!ShaderParser::prepend_preamble(*parsed)) {
+    return std::unexpected("Failed to prepend shader preamble");
+  }
+
   std::vector<VkShader::StageModule> modules;
+  PushConstantInfo push_constant_info{};
+
   for (const auto& entry : parsed->entries) {
     std::vector<std::uint8_t> spirv;
     auto result = compile_shader(to_glslang_stage(entry.stage),
@@ -218,15 +226,52 @@ VkShader::compile(IContext* context, const std::filesystem::path& path)
                              to_string(entry.stage));
     }
 
-    modules.emplace_back(entry.stage, entry.entry_name, module);
+    SpvReflectShaderModule reflect_module{};
+    if (spvReflectCreateShaderModule(
+          spirv.size(), spirv.data(), &reflect_module) ==
+        SPV_REFLECT_RESULT_SUCCESS) {
+      auto count = 0U;
+      if (auto res = spvReflectEnumeratePushConstantBlocks(
+            &reflect_module, &count, nullptr);
+          res == SPV_REFLECT_RESULT_SUCCESS && count > 0) {
+        std::vector<SpvReflectBlockVariable*> blocks(count);
+        res = spvReflectEnumeratePushConstantBlocks(
+          &reflect_module, &count, blocks.data());
+        if (res == SPV_REFLECT_RESULT_SUCCESS) {
+          for (auto* block : blocks) {
+            if (block->size > push_constant_info.size) {
+              push_constant_info.size = block->size;
+            }
+            push_constant_info.stages |= to_vk_stage(entry.stage);
+          }
+        }
+      }
+      spvReflectDestroyShaderModule(&reflect_module);
+    }
+
+    modules.emplace_back(entry.stage,
+                         entry.entry_name.empty() ? "main" : entry.entry_name,
+                         module);
   }
 
-  return VkShader(context, std::move(modules));
+  std::uint32_t total_stages {};
+  for (const auto& stage: parsed->entries | std::views::transform([](const auto& e) { return e.stage; })) {
+    total_stages |= to_vk_stage(stage);
+  }
+  auto flags = static_cast<VkShaderStageFlagBits>(total_stages);
+  push_constant_info.stages = flags;
+
+  return VkShader(context, std::move(modules), std::move(push_constant_info), flags);
 }
 
-VkShader::VkShader(IContext* ctx, std::vector<StageModule>&& mods)
-  : context(dynamic_cast<Context*>(ctx))
-  , modules(std::move(mods))
+VkShader::VkShader(IContext* ctx,
+                   std::vector<StageModule>&& mods,
+                   PushConstantInfo&& push_info,
+                   const VkShaderStageFlagBits flag_bits)
+  : push_constant_info(push_info)
+  , context(dynamic_cast<Context*>(ctx))
+  , modules(std::move(mods)),
+    flags(flag_bits)
 {
 }
 

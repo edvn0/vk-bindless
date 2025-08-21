@@ -342,17 +342,6 @@ CommandBuffer::cmd_begin_rendering(const RenderPass& render_pass,
 
   context->update_resource_bindings();
 
-  vkCmdSetDepthTestEnable(wrapper->command_buffer,
-                          fb.depth_stencil.texture ? VK_TRUE : VK_FALSE);
-  if (fb.depth_stencil.texture) {
-    vkCmdSetDepthCompareOp(wrapper->command_buffer,
-                           VK_COMPARE_OP_LESS); // or your desired compare op
-    vkCmdSetDepthWriteEnable(wrapper->command_buffer, VK_TRUE);
-  } else {
-    vkCmdSetDepthTestEnable(wrapper->command_buffer, VK_FALSE);
-  }
-  vkCmdSetDepthBiasEnable(wrapper->command_buffer, VK_FALSE);
-
   vkCmdBeginRendering(wrapper->command_buffer, &rendering_info);
 }
 
@@ -433,9 +422,9 @@ CommandBuffer::cmd_draw_indexed(std::uint32_t index_count,
 }
 
 auto
-CommandBuffer::cmd_bind_graphics_pipeline(GraphicsPipelineHandle handle) -> void
+CommandBuffer::cmd_bind_graphics_pipeline(const GraphicsPipelineHandle handle) -> void
 {
-  if (!handle.empty()) {
+  if (handle.empty()) {
     return;
   }
 
@@ -454,7 +443,7 @@ CommandBuffer::cmd_bind_graphics_pipeline(GraphicsPipelineHandle handle) -> void
     assert(false);
   }
 
-  VkPipeline vk_pipeline = context->get_pipeline(handle, view_mask);
+  const auto vk_pipeline = context->get_pipeline(handle, view_mask);
 
   assert(vk_pipeline != VK_NULL_HANDLE);
 
@@ -469,11 +458,11 @@ CommandBuffer::cmd_bind_graphics_pipeline(GraphicsPipelineHandle handle) -> void
 }
 
 auto
-CommandBuffer::cmd_push_constants(std::span<const std::byte> data) -> void
+CommandBuffer::cmd_push_constants(const std::span<const std::byte> data) -> void
 {
   assert(is_rendering && "Push constants can only be called during rendering");
 
-  auto device_limits =
+  const auto device_limits =
     context->vulkan_properties.base.limits.maxPushConstantsSize;
   if (data.empty() || data.size_bytes() % 4 != 0 ||
       data.size_bytes() > device_limits) {
@@ -486,17 +475,17 @@ CommandBuffer::cmd_push_constants(std::span<const std::byte> data) -> void
     return;
   }
 
-  auto graphics_pipeline =
+  const auto graphics_pipeline =
     *context->get_graphics_pipeline_pool().get(current_pipeline_graphics);
-  auto compute_pipeline =
+  const auto compute_pipeline =
     *context->get_compute_pipeline_pool().get(current_pipeline_compute);
 
   assert(graphics_pipeline || compute_pipeline);
 
-  VkPipelineLayout pipeline_layout = graphics_pipeline
+  const VkPipelineLayout pipeline_layout = graphics_pipeline
                                        ? graphics_pipeline->get_layout()
                                        : compute_pipeline->get_layout();
-  VkShaderStageFlags stage_flags = graphics_pipeline
+  const VkShaderStageFlags stage_flags = graphics_pipeline
                                      ? graphics_pipeline->get_stage_flags()
                                      : compute_pipeline->get_stage_flags();
 
@@ -505,11 +494,18 @@ CommandBuffer::cmd_push_constants(std::span<const std::byte> data) -> void
     return;
   }
 
+  static constexpr auto get_aligned_size = [](const auto s,
+                                            const auto alignment) {
+    return (s + alignment - 1) & ~(alignment - 1);
+  };
+        static const auto min_align =
+        context->vulkan_properties.base.limits.minUniformBufferOffsetAlignment;
+
   vkCmdPushConstants(wrapper->command_buffer,
                      pipeline_layout,
                      stage_flags,
                      0,
-                     static_cast<std::uint32_t>(data.size_bytes()),
+                     static_cast<std::uint32_t>(get_aligned_size(data.size_bytes(),min_align )),
                      data.data());
 }
 

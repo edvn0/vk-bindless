@@ -182,6 +182,7 @@ private:
 
   bool sampled{ false };
   bool storage{ false };
+  bool is_depth {false};
 
   auto create_internal_image(IContext&, const VkTextureDescription&) -> void;
 };

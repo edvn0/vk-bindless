@@ -49,10 +49,9 @@ struct GraphicsPipelineDescription
   float min_sample_shading = 0.0f;
   std::string debug_name{};
 
-  auto get_colour_attachments_count() const -> std::uint32_t
+  [[nodiscard]] auto get_colour_attachments_count() const -> std::uint32_t
   {
-    auto result = std::count_if(
-      color.begin(), color.end(), [](const ColourAttachment& attachment) {
+    const auto result = std::ranges::count_if(color, [](const ColourAttachment& attachment) {
         return attachment.format != Format::Invalid;
       });
     return static_cast<std::uint32_t>(result);
@@ -61,13 +60,13 @@ struct GraphicsPipelineDescription
 
 class VkGraphicsPipeline
 {
-private:
   VkPipelineLayout layout{ VK_NULL_HANDLE };
   VkPipeline pipeline{ VK_NULL_HANDLE };
   VkShaderStageFlags stage_flags{ VK_SHADER_STAGE_ALL_GRAPHICS };
   GraphicsPipelineDescription description{};
   std::uint32_t binding_count{ 0 };
   std::uint32_t attribute_count{ 0 };
+  std::uint32_t view_mask{ 0 };
 
   std::array<VkVertexInputBindingDescription,
              VertexInput::input_bindings_max_count>
@@ -76,20 +75,19 @@ private:
              VertexInput::vertex_attribute_max_count>
     attributes{};
   VkDescriptorSetLayout descriptor_set_layout{ VK_NULL_HANDLE };
+  VkDescriptorSetLayout last_descriptor_set_layout{ VK_NULL_HANDLE };
 
   std::unique_ptr<std::byte[]> specialisation_constants_storage{ nullptr };
 
   friend class CommandBuffer;
+  friend class Context;
 
 public:
   [[nodiscard]] auto get_layout() const -> const VkPipelineLayout&
   {
     return layout;
   }
-  [[nodiscard]] auto get_stage_flags() const -> const VkShaderStageFlags&
-  {
-    return stage_flags;
-  }
+  [[nodiscard]] auto get_stage_flags() const -> VkShaderStageFlags;
   [[nodiscard]] auto get_pipeline() const -> const VkPipeline&
   {
     return pipeline;

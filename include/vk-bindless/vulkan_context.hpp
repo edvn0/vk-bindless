@@ -105,17 +105,17 @@ public:
     return *immediate_commands;
   }
 
-  void bind_default_descriptor_sets(VkCommandBuffer cmdBuf,
-                                    VkPipelineBindPoint bindPoint,
-                                    VkPipelineLayout layout) const
+  void bind_default_descriptor_sets(const VkCommandBuffer cmd,
+                                    const VkPipelineBindPoint bind_point,
+                                    const VkPipelineLayout layout) const
   {
-    const std::array<VkDescriptorSet, 3> dsets{
+    const std::array dsets{
       descriptor_set,
       descriptor_set,
       descriptor_set,
     };
-    vkCmdBindDescriptorSets(cmdBuf,
-                            bindPoint,
+    vkCmdBindDescriptorSets(cmd,
+                            bind_point,
                             layout,
                             0,
                             static_cast<std::uint32_t>(dsets.size()),
@@ -123,6 +123,8 @@ public:
                             0,
                             nullptr);
   }
+  auto get_pipeline(GraphicsPipelineHandle , std::uint32_t)->VkPipeline;
+
 
 private:
   vkb::Instance vkb_instance{};
@@ -149,7 +151,7 @@ private:
   std::uint32_t current_max_textures{ 16 };
   std::uint32_t current_max_samplers{ 16 };
   std::uint32_t current_max_acceleration_structures{ 16 };
-  bool resource_bindings_updated = false;
+  bool resource_bindings_updated = true; // Flag to indicate if resource bindings need to be updated. True initially to trigger first
   VkDescriptorSetLayout descriptor_set_layout{ VK_NULL_HANDLE };
   VkDescriptorSet descriptor_set{ VK_NULL_HANDLE };
   VkDescriptorPool descriptor_pool{ VK_NULL_HANDLE };
