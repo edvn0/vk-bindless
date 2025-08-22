@@ -8,37 +8,47 @@ namespace VkBindless {
 
 static constexpr std::uint32_t invalid_generation = 0U;
 
-template <typename> class Handle final {
+template<typename>
+class Handle final
+{
   Handle(const std::uint32_t index, const std::uint32_t generation)
-      : handle_index(index), handle_generation(generation) {}
+    : handle_index(index)
+    , handle_generation(generation)
+  {
+  }
 
-  std::uint32_t handle_index{0};
-  std::uint32_t handle_generation{0};
+  std::uint32_t handle_index{ 0 };
+  std::uint32_t handle_generation{ 0 };
 
-  template <typename T_, typename TImpl> friend class Pool;
+  template<typename T_, typename TImpl>
+  friend class Pool;
 
 public:
   Handle() = default;
 
-  [[nodiscard]] auto valid() const -> bool {
+  [[nodiscard]] auto valid() const -> bool
+  {
     return handle_generation != invalid_generation;
   }
-  [[nodiscard]] auto empty() const -> bool {
+  [[nodiscard]] auto empty() const -> bool
+  {
     return handle_generation == invalid_generation;
   }
   explicit operator bool() const { return valid(); }
 
   [[nodiscard]] auto index() const -> std::uint32_t { return handle_index; }
-  [[nodiscard]] auto generation() const -> std::uint32_t {
+  [[nodiscard]] auto generation() const -> std::uint32_t
+  {
     return handle_generation;
   }
 
-  template <typename V = void *>
-  [[nodiscard]] auto explicit_cast() const -> V * {
-    return std::bit_cast<V *>(static_cast<std::ptrdiff_t>(handle_index));
+  template<typename V = void*>
+  [[nodiscard]] auto explicit_cast() const -> V*
+  {
+    return std::bit_cast<V*>(static_cast<std::ptrdiff_t>(handle_index));
   }
 
-  auto operator<=>(const Handle &other) const = default;
+  auto operator<=>(const Handle& other) const = default;
 };
 static_assert(sizeof(Handle<class K>) == sizeof(std::uint64_t),
               "Handle size mismatch");

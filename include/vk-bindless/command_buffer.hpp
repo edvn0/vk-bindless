@@ -1,10 +1,9 @@
 #pragma once
 
 #include "vk-bindless/commands.hpp"
+#include "vk-bindless/common.hpp"
 #include "vk-bindless/forward.hpp"
 #include "vk-bindless/handle.hpp"
-#include "vk-bindless/common.hpp"
-
 
 #include <array>
 #include <concepts>
@@ -70,16 +69,17 @@ public:
       sizeof(T) - offset,
     });
   }
-  /*
-    virtual auto cmd_bind_vertex_buffer(std::uint32_t index,
-                                      BufferHandle buffer,
-                                      std::uint64_t buffer_offset = 0)
-    -> void = 0;
+
   virtual auto cmd_bind_index_buffer(BufferHandle index_buffer,
                                      IndexFormat index_format,
                                      std::uint64_t index_buffer_offset = 0)
     -> void = 0;
+  /*
 
+  virtual auto cmd_bind_vertex_buffer(std::uint32_t index,
+                                      BufferHandle buffer,
+                                      std::uint64_t buffer_offset = 0)
+    -> void = 0;
           virtual auto cmd_fill_buffer(BufferHandle buffer, std::size_t
          buffer_offset, std::size_t size, std::uint32_t data)
               -> void = 0;
@@ -182,6 +182,10 @@ public:
                         std::int32_t,
                         std::uint32_t) -> void override;
   auto cmd_push_constants(std::span<const std::byte>) -> void override;
+  auto cmd_bind_index_buffer(BufferHandle index_buffer,
+                             IndexFormat index_format,
+                             std::uint64_t index_buffer_offset = 0)
+    -> void override;
 
 private:
   Context* context{ nullptr };

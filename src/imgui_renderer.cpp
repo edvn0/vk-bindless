@@ -1,8 +1,11 @@
 #include "vk-bindless/imgui_renderer.hpp"
 
+#include "vk-bindless/buffer.hpp"
 #include "vk-bindless/graphics_context.hpp"
 #include "vk-bindless/pipeline.hpp"
 #include "vk-bindless/swapchain.hpp"
+
+#include <imgui.h>
 
 namespace VkBindless {
 
@@ -44,10 +47,10 @@ ImGuiRenderer::create_pipeline(const Framebuffer& fb) const
   });
 }
 
- ImGuiRenderer::ImGuiRenderer(IContext& ctx,
+ImGuiRenderer::ImGuiRenderer(IContext& ctx,
                              std::string_view default_font_ttf,
                              float font_size)
-                               : context(&ctx)
+  : context(&ctx)
 {
   ImGui::CreateContext();
 #if defined(LVK_WITH_IMPLOT)
@@ -56,31 +59,32 @@ ImGuiRenderer::create_pipeline(const Framebuffer& fb) const
 
   ImGuiIO& io = ImGui::GetIO();
   io.BackendRendererName = "imgui-lvk";
-  io.BackendFlags |=
-    ImGuiBackendFlags_RendererHasVtxOffset;
+  io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
 
   update_font(default_font_ttf, font_size);
-  gui_shader = VkShader::create(context, "assets/shaders/imgui.shader");
-  sampler_clamp_to_edge = VkTextureSampler::create(*context, {
-  .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-  .pNext = nullptr,
-  .flags = {},
-  .magFilter = VK_FILTER_LINEAR,
-  .minFilter = VK_FILTER_LINEAR,
-  .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-  .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-  .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-  .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-  .mipLodBias = 0.0F,
-  .anisotropyEnable = VK_FALSE,
-  .maxAnisotropy = 0.0F,
-  .compareEnable = VK_FALSE,
-  .compareOp = VK_COMPARE_OP_ALWAYS,
-  .minLod = 0.0F,
-  .maxLod = 1.0F,
-  .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK,
-  .unnormalizedCoordinates = VK_FALSE,
-  });
+  gui_shader = VkShader::create(context, "assets/shaders/gui.shader");
+  sampler_clamp_to_edge = VkTextureSampler::create(
+    *context,
+    {
+      .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = {},
+      .magFilter = VK_FILTER_LINEAR,
+      .minFilter = VK_FILTER_LINEAR,
+      .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+      .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+      .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+      .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+      .mipLodBias = 0.0F,
+      .anisotropyEnable = VK_FALSE,
+      .maxAnisotropy = 0.0F,
+      .compareEnable = VK_FALSE,
+      .compareOp = VK_COMPARE_OP_ALWAYS,
+      .minLod = 0.0F,
+      .maxLod = 1.0F,
+      .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK,
+      .unnormalizedCoordinates = VK_FALSE,
+    });
 }
 
 ImGuiRenderer::~ImGuiRenderer()
@@ -93,13 +97,13 @@ ImGuiRenderer::~ImGuiRenderer()
   ImGui::DestroyContext();
 }
 
-auto ImGuiRenderer::beginFrame(
-  const Framebuffer& desc)
+auto
+ImGuiRenderer::begin_frame(const Framebuffer& desc) -> void
 {
-  const auto& dim = context->get_dimensions(desc.color.at(0).texture);
+  const auto dim = context->get_dimensions(desc.color.at(0).texture);
   ImGuiIO& io = ImGui::GetIO();
-  io.DisplaySize = ImVec2(dim.width / display_scale,
-                          dim.height / display_scale);
+  io.DisplaySize =
+    ImVec2(dim.width / display_scale, dim.height / display_scale);
   io.DisplayFramebufferScale = ImVec2(display_scale, display_scale);
   io.IniFilename = nullptr;
   if (graphics_pipeline.empty()) {
@@ -108,22 +112,21 @@ auto ImGuiRenderer::beginFrame(
   ImGui::NewFrame();
 }
 
-void ImGuiRenderer::end_frame(ICommandBuffer& cmdBuffer)
+void
+ImGuiRenderer::end_frame(ICommandBuffer& command_buffer)
 {
   ImGui::EndFrame();
   ImGui::Render();
   ImDrawData* dd = ImGui::GetDrawData();
-  const float fb_width =
-    dd->DisplaySize.x * dd->FramebufferScale.x;
-  const float fb_height =
-    dd->DisplaySize.y * dd->FramebufferScale.y;
+  const float fb_width = dd->DisplaySize.x * dd->FramebufferScale.x;
+  const float fb_height = dd->DisplaySize.y * dd->FramebufferScale.y;
 
-  cmdBuffer.cmd_bind_depth_state({});
-  cmdBuffer.cmd_bind_viewport({
-  .x = 0.0f,
-  .y = 0.0f,
-  .width =   fb_width ,
-  .height = fb_height,
+  command_buffer.cmd_bind_depth_state({});
+  command_buffer.cmd_bind_viewport({
+    .x = 0.0f,
+    .y = 0.0f,
+    .width = fb_width,
+    .height = fb_height,
   });
 
   const float L = dd->DisplayPos.x;
@@ -133,96 +136,110 @@ void ImGuiRenderer::end_frame(ICommandBuffer& cmdBuffer)
   const ImVec2 clipOff = dd->DisplayPos;
   const ImVec2 clipScale = dd->FramebufferScale;
 
-  auto& drawableData = drawables.at(frame_index);
+  auto& drawable = drawables.at(frame_index);
   frame_index = (frame_index + 1) % std::size(drawables);
 
-
-  if (drawableData.allocated_indices < dd->TotalIdxCount)
-  {
-    drawableData.index_buffer = IndexBuffer::create(context, {
-      .usage = BufferUsageBits::Index,
-      .storage = StorageType::HostVisible,
-      .size = dd->TotalIdxCount * sizeof(ImDrawIdx),
-      .debugName = "ImGui: drawable_data.index_buffer",
-    });
-    drawableData.allocated_indices = dd->TotalIdxCount;
+  if (drawable.allocated_indices <
+      static_cast<std::uint32_t>(dd->TotalIdxCount)) {
+    drawable.index_buffer =
+      VkDataBuffer::create(*context,
+                           {
+                             .size = dd->TotalIdxCount * sizeof(ImDrawIdx),
+                             .storage = StorageType::HostVisible,
+                             .usage = BufferUsageFlags::IndexBuffer,
+                             .debug_name = "ImGui: drawable_data.index_buffer",
+                           });
+    drawable.allocated_indices = dd->TotalIdxCount;
   }
 
-  if (drawableData.allocated_vertices < dd->TotalVtxCount)
-  {
-    drawableData.vertex_buffer = VertexBuffer::create(context, {
-      .usage = BufferUsageBits::Storage,
-      .storage = StorageType::HostVisible,
-      .size = dd->TotalVtxCount * sizeof(ImDrawVert),
-      .debugName = "ImGui: drawableData.vb_",
-    });
-    drawableData.allocated_vertices = dd->TotalVtxCount;
+  if (drawable.allocated_vertices <
+      static_cast<std::uint32_t>(dd->TotalVtxCount)) {
+    drawable.vertex_buffer =
+      VkDataBuffer::create(*context,
+                           {
+                             .size = dd->TotalVtxCount * sizeof(ImDrawVert),
+                             .storage = StorageType::HostVisible,
+                             .usage = BufferUsageFlags::StorageBuffer,
+                             .debug_name = "ImGui: drawable.vb_",
+                           });
+    drawable.allocated_vertices = dd->TotalVtxCount;
   }
 
-  auto* vtx = context->get_mapped_pointer<ImDrawVert*>(drawableData.vertex_buffer);
-  auto* idx = context->get_mapped_pointer<(uint16_t*)>(drawableData.index_buffer);
+  auto vtx = context->get_mapped_pointer<ImDrawVert>(*drawable.vertex_buffer);
+  auto idx = context->get_mapped_pointer<uint16_t>(*drawable.index_buffer);
   for (int n = 0; n < dd->CmdListsCount; n++) {
-    const ImDrawList* cmdList = dd->CmdLists[n];
-    std::memcpy(vtx, cmdList->VtxBuffer.Data,
-      cmdList->VtxBuffer.Size * sizeof(ImDrawVert));
-    std::memcpy(idx, cmdList->IdxBuffer.Data,
-      cmdList->IdxBuffer.Size * sizeof(ImDrawIdx));
-    vtx += cmdList->VtxBuffer.Size;
-    idx += cmdList->IdxBuffer.Size;
+    const ImDrawList* command_list = dd->CmdLists[n];
+    std::memcpy(vtx,
+                command_list->VtxBuffer.Data,
+                command_list->VtxBuffer.Size * sizeof(ImDrawVert));
+    std::memcpy(idx,
+                command_list->IdxBuffer.Data,
+                command_list->IdxBuffer.Size * sizeof(ImDrawIdx));
+    vtx += command_list->VtxBuffer.Size;
+    idx += command_list->IdxBuffer.Size;
   }
 
-  context->flush_mapped_memory(drawableData.vertex_buffer, 0, dd->TotalVtxCount * sizeof(ImDrawVert));
-  context->flush_mapped_memory(drawableData.index_buffer, 0, dd->TotalIdxCount * sizeof(ImDrawIdx));
+  context->flush_mapped_memory(
+    *drawable.vertex_buffer, 0, dd->TotalVtxCount * sizeof(ImDrawVert));
+  context->flush_mapped_memory(
+    *drawable.index_buffer, 0, dd->TotalIdxCount * sizeof(ImDrawIdx));
 
-  uint32_t idxOffset = 0;
-  uint32_t vtxOffset = 0;
-  cmdBuffer.cmd_bind_index_buffer(
-    drawableData.index_buffer, IndexFormat::UI16);
-  cmdBuffer.cmd_bind_graphics_pipeline(*gui_shader);
-  for (int n = 0; n < dd->CmdListsCount; n++) {
-    const ImDrawList* cmdList = dd->CmdLists[n];
-    for (int cmd_i = 0; cmd_i < cmdList->CmdBuffer.Size; cmd_i++) {
-      const ImDrawCmd& cmd = cmdList->CmdBuffer[cmd_i];
-      ImVec2 clipMin(
-        (cmd.ClipRect.x - clipOff.x) * clipScale.x,
-        (cmd.ClipRect.y - clipOff.y) * clipScale.y);
-      ImVec2 clipMax(
-        (cmd.ClipRect.z - clipOff.x) * clipScale.x,
-        (cmd.ClipRect.w - clipOff.y) * clipScale.y);
-      if (clipMin.x < 0.0f) clipMin.x = 0.0f;
-      if (clipMin.y < 0.0f) clipMin.y = 0.0f;
-      if (clipMax.x > fb_width ) clipMax.x = fb_width;
-      if (clipMax.y > fb_height) clipMax.y = fb_height;
-      if (clipMax.x <= clipMin.x ||
-          clipMax.y <= clipMin.y) continue;
-      struct VulkanImguiBindData {
+  std::uint32_t index_offset = 0;
+  std::uint32_t vertex_offset = 0;
+  command_buffer.cmd_bind_index_buffer(*drawable.index_buffer,
+                                       IndexFormat::UI16);
+  command_buffer.cmd_bind_graphics_pipeline(*graphics_pipeline);
+  for (std::int32_t n = 0; n < dd->CmdListsCount; n++) {
+    const auto* command_list = dd->CmdLists[n];
+    for (std::int32_t index = 0; index < command_list->CmdBuffer.Size;
+         index++) {
+      const auto& cmd = command_list->CmdBuffer[index];
+      ImVec2 clip_min((cmd.ClipRect.x - clipOff.x) * clipScale.x,
+                      (cmd.ClipRect.y - clipOff.y) * clipScale.y);
+      ImVec2 clip_max((cmd.ClipRect.z - clipOff.x) * clipScale.x,
+                      (cmd.ClipRect.w - clipOff.y) * clipScale.y);
+      if (clip_min.x < 0.0f)
+        clip_min.x = 0.0f;
+      if (clip_min.y < 0.0f)
+        clip_min.y = 0.0f;
+      if (clip_max.x > fb_width)
+        clip_max.x = fb_width;
+      if (clip_max.y > fb_height)
+        clip_max.y = fb_height;
+      if (clip_max.x <= clip_min.x || clip_max.y <= clip_min.y)
+        continue;
+      struct VulkanImguiBindData
+      {
         float LRTB[4];
-        uint64_t vb = 0;
-        uint32_t textureId = 0;
-        uint32_t samplerId = 0;
+        std::uint64_t vb = 0;
+        std::uint32_t textureId = 0;
+        std::uint32_t samplerId = 0;
       } bindData = {
-        .LRTB = {L, R, T, B},
-        .vb = context->get_device_address(drawableData.vertex_buffer),
-        .textureId = static_cast<uint32_t>(cmd.TextureId),
+        .LRTB = { L, R, T, B },
+        .vb = context->get_device_address(*drawable.vertex_buffer),
+        .textureId = static_cast<std::uint32_t>(cmd.TexRef.GetTexID()),
         .samplerId = sampler_clamp_to_edge.index(),
       };
-      cmdBuffer.cmd_push_constants<VulkanImguiBindData>(bindData, 0);
-      cmdBuffer.cmd_bind_scissor_rect({
-      uint32_t(clipMin.x),
-      uint32_t(clipMin.y),
-      uint32_t(clipMax.x - clipMin.x),
-      uint32_t(clipMax.y - clipMin.y)});
-      cmdBuffer.cmd_draw_indexed(cmd.ElemCount, 1u,
-      idxOffset + cmd.IdxOffset,
-      int32_t(vtxOffset + cmd.VtxOffset));
+      command_buffer.cmd_push_constants<VulkanImguiBindData>(bindData, 0);
+      command_buffer.cmd_bind_scissor_rect({
+        static_cast<uint32_t>(clip_min.x),
+        static_cast<uint32_t>(clip_min.y),
+        static_cast<uint32_t>(clip_max.x - clip_min.x),
+        static_cast<uint32_t>(clip_max.y - clip_min.y),
+      });
+      command_buffer.cmd_draw_indexed(cmd.ElemCount,
+                                      1u,
+                                      index_offset + cmd.IdxOffset,
+                                      int32_t(vertex_offset + cmd.VtxOffset),
+                                      0);
     }
-    idxOffset += cmdList->IdxBuffer.Size;
-    vtxOffset += cmdList->VtxBuffer.Size;
+    index_offset += command_list->IdxBuffer.Size;
+    vertex_offset += command_list->VtxBuffer.Size;
   }
-
 }
 auto
-ImGuiRenderer::update_font(std::string_view ttf_path, float font_size_pixels) -> void
+ImGuiRenderer::update_font(std::string_view ttf_path, float font_size_pixels)
+  -> void
 {
   auto& io = ImGui::GetIO();
   ImFontConfig cfg = ImFontConfig();
@@ -234,8 +251,7 @@ ImGuiRenderer::update_font(std::string_view ttf_path, float font_size_pixels) ->
   cfg.OversampleV = 4;
   ImFont* font = nullptr;
   if (!ttf_path.empty()) {
-    font = io.Fonts->AddFontFromFileTTF(
-      ttf_path.data(), cfg.SizePixels, &cfg);
+    font = io.Fonts->AddFontFromFileTTF(ttf_path.data(), cfg.SizePixels, &cfg);
   }
   io.Fonts->Flags |= ImFontAtlasFlags_NoPowerOfTwoHeight;
 
@@ -253,7 +269,7 @@ ImGuiRenderer::update_font(std::string_view ttf_path, float font_size_pixels) ->
   .usage_flags = TextureUsageFlags::Sampled |
     TextureUsageFlags::TransferDestination,
   .layers = 1,
-  .mip_levels = 1, // No mipmaps for font texture
+  .mip_levels = 1, 
   .sample_count = VK_SAMPLE_COUNT_1_BIT,
   .tiling = VK_IMAGE_TILING_OPTIMAL,
   .debug_name ="ImGui Font Texture",

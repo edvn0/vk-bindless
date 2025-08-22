@@ -422,7 +422,8 @@ CommandBuffer::cmd_draw_indexed(std::uint32_t index_count,
 }
 
 auto
-CommandBuffer::cmd_bind_graphics_pipeline(const GraphicsPipelineHandle handle) -> void
+CommandBuffer::cmd_bind_graphics_pipeline(const GraphicsPipelineHandle handle)
+  -> void
 {
   if (handle.empty()) {
     return;
@@ -475,19 +476,21 @@ CommandBuffer::cmd_push_constants(const std::span<const std::byte> data) -> void
     return;
   }
 
-  const auto graphics_pipeline =
-    *context->get_graphics_pipeline_pool().get(current_pipeline_graphics);
-  const auto compute_pipeline =
-    *context->get_compute_pipeline_pool().get(current_pipeline_compute);
+  const auto* graphics_pipeline = context->get_graphics_pipeline_pool()
+                                    .get(current_pipeline_graphics)
+                                    .value_or(nullptr);
+  const auto* compute_pipeline = context->get_compute_pipeline_pool()
+                                   .get(current_pipeline_compute)
+                                   .value_or(nullptr);
 
   assert(graphics_pipeline || compute_pipeline);
 
   const VkPipelineLayout pipeline_layout = graphics_pipeline
-                                       ? graphics_pipeline->get_layout()
-                                       : compute_pipeline->get_layout();
-  const VkShaderStageFlags stage_flags = graphics_pipeline
-                                     ? graphics_pipeline->get_stage_flags()
-                                     : compute_pipeline->get_stage_flags();
+                                             ? graphics_pipeline->get_layout()
+                                             : compute_pipeline->get_layout();
+  const VkShaderStageFlags stage_flags =
+    graphics_pipeline ? graphics_pipeline->get_stage_flags()
+                      : compute_pipeline->get_stage_flags();
 
   if (pipeline_layout == VK_NULL_HANDLE) {
     std::cerr << "Pipeline layout is null for push constants." << std::endl;
@@ -495,18 +498,41 @@ CommandBuffer::cmd_push_constants(const std::span<const std::byte> data) -> void
   }
 
   static constexpr auto get_aligned_size = [](const auto s,
-                                            const auto alignment) {
+                                              const auto alignment) {
     return (s + alignment - 1) & ~(alignment - 1);
   };
-        static const auto min_align =
-        context->vulkan_properties.base.limits.minUniformBufferOffsetAlignment;
+  static const auto min_align =
+    context->vulkan_properties.base.limits.minUniformBufferOffsetAlignment;
 
-  vkCmdPushConstants(wrapper->command_buffer,
-                     pipeline_layout,
-                     stage_flags,
-                     0,
-                     static_cast<std::uint32_t>(get_aligned_size(data.size_bytes(),min_align )),
-                     data.data());
+  vkCmdPushConstants(
+    wrapper->command_buffer,
+    pipeline_layout,
+    stage_flags,
+    0,
+    static_cast<std::uint32_t>(get_aligned_size(data.size_bytes(), min_align)),
+    data.data());
+}
+
+auto
+CommandBuffer::cmd_bind_index_buffer(BufferHandle index_buffer,
+                                     IndexFormat index_format,
+                                     std::uint64_t index_buffer_offset) -> void
+{
+  assert(is_rendering && "Index buffer can only be bound during rendering");
+  if (index_buffer.empty()) {
+    return;
+  }
+
+  const auto* buffer = *context->get_buffer_pool().get(index_buffer);
+  if (!buffer) {
+    std::cerr << "Invalid index buffer handle." << std::endl;
+    return;
+  }
+
+  vkCmdBindIndexBuffer(wrapper->command_buffer,
+                       buffer->get_buffer(),
+                       index_buffer_offset,
+                       static_cast<VkIndexType>(index_format));
 }
 
 } // namespace vk_bindless

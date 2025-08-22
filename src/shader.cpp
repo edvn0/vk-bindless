@@ -150,7 +150,6 @@ to_glslang_stage(const ShaderStage stage) -> glslang_stage_t
       std::cerr << "Unknown shader stage: " << to_string(stage) << std::endl;
       return GLSLANG_STAGE_VERTEX; // fallback to vertex stage
   }
-  return GLSLANG_STAGE_VERTEX; // fallback
 }
 }
 
@@ -254,8 +253,10 @@ VkShader::compile(IContext* context, const std::filesystem::path& path)
                          module);
   }
 
-  std::uint32_t total_stages {};
-  for (const auto& stage: parsed->entries | std::views::transform([](const auto& e) { return e.stage; })) {
+  std::uint32_t total_stages{};
+  for (const auto& stage :
+       parsed->entries |
+         std::views::transform([](const auto& e) { return e.stage; })) {
     total_stages |= to_vk_stage(stage);
   }
   auto flags = static_cast<VkShaderStageFlagBits>(total_stages);
@@ -270,8 +271,8 @@ VkShader::VkShader(IContext* ctx,
                    const VkShaderStageFlagBits flag_bits)
   : push_constant_info(push_info)
   , context(dynamic_cast<Context*>(ctx))
-  , modules(std::move(mods)),
-    flags(flag_bits)
+  , modules(std::move(mods))
+  , flags(flag_bits)
 {
 }
 

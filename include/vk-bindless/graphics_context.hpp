@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vk-bindless/buffer.hpp"
 #include "vk-bindless/command_buffer.hpp"
 #include "vk-bindless/commands.hpp"
 #include "vk-bindless/expected.hpp"
@@ -36,6 +37,7 @@ using SamplerPool = Pool<Sampler, VkSampler>;
 using ComputePipelinePool = Pool<ComputePipeline, VkComputePipeline>;
 using GraphicsPipelinePool = Pool<GraphicsPipeline, VkGraphicsPipeline>;
 using ShaderModulePool = Pool<ShaderModule, VkShader>;
+using BufferPool = Pool<Buffer, VkDataBuffer>;
 
 struct IContext
 {
@@ -52,6 +54,19 @@ struct IContext
     -> const VkQueue& = 0;
   [[nodiscard]] virtual auto get_queue_family_index_unsafe(Queue queue) const
     -> std::uint32_t = 0;
+
+  virtual auto get_dimensions(TextureHandle handle) const -> Dimensions = 0;
+  virtual auto get_device_address(BufferHandle handle) -> std::uint64_t = 0;
+  virtual auto get_mapped_pointer(BufferHandle handle) -> void* = 0;
+  template<typename T>
+  auto get_mapped_pointer(BufferHandle handle) -> std::add_pointer_t<T>
+  {
+    return static_cast<std::add_pointer_t<T>>(this->get_mapped_pointer(handle));
+  }
+  virtual auto flush_mapped_memory(BufferHandle handle,
+                                   std::uint64_t offset,
+                                   std::uint64_t size) -> void = 0;
+  virtual auto use_staging() const -> bool = 0;
 
   virtual auto get_swapchain() -> Swapchain& = 0;
   virtual auto resize_swapchain(std::uint32_t width, std::uint32_t height)
@@ -76,6 +91,7 @@ struct IContext
   virtual auto get_compute_pipeline_pool() -> ComputePipelinePool& = 0;
   virtual auto get_graphics_pipeline_pool() -> GraphicsPipelinePool& = 0;
   virtual auto get_shader_module_pool() -> ShaderModulePool& = 0;
+  virtual auto get_buffer_pool() -> BufferPool& = 0;
 
   virtual auto acquire_command_buffer() -> ICommandBuffer& = 0;
   virtual auto submit(ICommandBuffer&, TextureHandle present)

@@ -5,6 +5,7 @@
 #include <array>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <variant>
 
 namespace VkBindless {
@@ -13,9 +14,9 @@ static constexpr auto max_colour_attachments = 8U;
 
 enum class IndexFormat : std::uint8_t
 {
-  UI8,
   UI16,
   UI32,
+  UI8,
 };
 
 enum class Topology : std::uint8_t
@@ -452,7 +453,7 @@ struct ScissorRect
 
 struct StencilState
 {
-  bool enabled {false};
+  bool enabled{ false };
   StencilOp stencil_failure_operation = StencilOp::Keep;
   StencilOp depth_failure_operation = StencilOp::Keep;
   StencilOp depth_stencil_pass_operation = StencilOp::Keep;
@@ -480,4 +481,45 @@ struct Offset3D
   std::int32_t y = 0;
   std::int32_t z = 0;
 };
+
+#define MAKE_BIT_FIELD(E)                                                      \
+  constexpr E operator|(const E lhs, const E rhs)                              \
+  {                                                                            \
+    const auto underlying_lhs = std::to_underlying(lhs);                       \
+    const auto underlying_rhs = std::to_underlying(rhs);                       \
+    return static_cast<E>(underlying_lhs | underlying_rhs);                    \
+  }                                                                            \
+  constexpr E operator&(const E lhs, const E rhs)                              \
+  {                                                                            \
+    const auto underlying_lhs = std::to_underlying(lhs);                       \
+    const auto underlying_rhs = std::to_underlying(rhs);                       \
+    return static_cast<E>(underlying_lhs & underlying_rhs);                    \
+  }                                                                            \
+  constexpr bool operator!(const E value)                                      \
+  {                                                                            \
+    return std::to_underlying(value) == 0;                                     \
+  }                                                                            \
+  constexpr bool operator==(const E lhs, const E rhs)                          \
+  {                                                                            \
+    return std::to_underlying(lhs) == std::to_underlying(rhs);                 \
+  }                                                                            \
+  constexpr bool operator!=(const E lhs, const E rhs)                          \
+  {                                                                            \
+    return std::to_underlying(lhs) != std::to_underlying(rhs);                 \
+  }                                                                            \
+  constexpr E& operator|=(E& lhs, const E rhs)                                 \
+  {                                                                            \
+    lhs = lhs | rhs;                                                           \
+    return lhs;                                                                \
+  }                                                                            \
+  constexpr E& operator&=(E& lhs, const E rhs)                                 \
+  {                                                                            \
+    lhs = lhs & rhs;                                                           \
+    return lhs;                                                                \
+  }                                                                            \
+  constexpr E operator~(const E value)                                         \
+  {                                                                            \
+    return static_cast<E>(~std::to_underlying(value));                         \
+  }
+
 }

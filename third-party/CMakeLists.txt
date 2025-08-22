@@ -16,6 +16,33 @@ add_subdirectory(SPIRV-Reflect)
 
 add_subdirectory(glm)
 
+function(ADD_IMGUI)
+     # Prevent redefinition if called multiple times
+    if (TARGET imgui::imgui)
+        return()
+    endif()
+
+    
+    file(GLOB IMGUI_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/imgui/*.cpp"
+    )
+    
+    # Add vulkan
+    list(APPEND IMGUI_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends/imgui_impl_glfw.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends/imgui_impl_vulkan.cpp")
+    
+    add_library(imgui STATIC ${IMGUI_SOURCES})
+    add_library(imgui::imgui ALIAS imgui)
+
+    target_include_directories(imgui PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/imgui"
+        PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/glfw/include
+        ${Vulkan_INCLUDE_DIRS}
+    )
+endfunction()
+
+ADD_IMGUI()
+
 if (ENABLE_TESTING)
     add_subdirectory(doctest)
 endif()

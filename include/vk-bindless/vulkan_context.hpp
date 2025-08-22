@@ -17,8 +17,10 @@
 
 namespace VkBindless {
 
-auto format_to_vk_format(Format format) -> VkFormat;
-auto vk_format_to_format( VkFormat format) -> Format;
+auto
+format_to_vk_format(Format format) -> VkFormat;
+auto
+vk_format_to_format(VkFormat format) -> Format;
 
 inline auto
 set_name_for_object(auto device,
@@ -97,11 +99,19 @@ public:
   {
     return shader_module_pool;
   }
+  auto get_buffer_pool() -> BufferPool& override { return buffer_pool; }
 
   auto acquire_command_buffer() -> ICommandBuffer& override;
   auto submit(ICommandBuffer& cmd_buffer, TextureHandle present)
     -> Expected<SubmitHandle, std::string> override;
   auto get_current_swapchain_texture() -> TextureHandle override;
+  auto get_dimensions(TextureHandle) const -> Dimensions override;
+  auto get_device_address(BufferHandle) -> std::uint64_t override;
+  auto get_mapped_pointer(BufferHandle) -> void* override;
+  auto flush_mapped_memory(BufferHandle,
+                           std::uint64_t offset,
+                           std::uint64_t size) -> void override;
+  auto use_staging() const -> bool override { return use_staging_system; }
 
   [[nodiscard]] auto get_immediate_commands() const -> auto&
   {
@@ -113,10 +123,7 @@ public:
                                     const VkPipelineLayout layout) const -> void
   {
     const std::array dsets{
-      descriptor_set,
-      descriptor_set,
-      descriptor_set,
-      descriptor_set
+      descriptor_set, descriptor_set, descriptor_set, descriptor_set
     };
     vkCmdBindDescriptorSets(cmd,
                             bind_point,
@@ -127,8 +134,7 @@ public:
                             0,
                             nullptr);
   }
-  auto get_pipeline(GraphicsPipelineHandle , std::uint32_t)->VkPipeline;
-
+  auto get_pipeline(GraphicsPipelineHandle, std::uint32_t) -> VkPipeline;
 
 private:
   vkb::Instance vkb_instance{};
@@ -137,6 +143,7 @@ private:
   VkSurfaceKHR surface{};
   Unique<Swapchain> swapchain{};
   VkSemaphore timeline_semaphore{ VK_NULL_HANDLE };
+  bool use_staging_system{ false };
 
   VkQueue graphics_queue{};
   VkQueue compute_queue{};
@@ -151,11 +158,14 @@ private:
   ComputePipelinePool compute_pipeline_pool{};
   GraphicsPipelinePool graphics_pipeline_pool{};
   ShaderModulePool shader_module_pool{};
+  BufferPool buffer_pool{};
 
   std::uint32_t current_max_textures{ 16 };
   std::uint32_t current_max_samplers{ 16 };
   std::uint32_t current_max_acceleration_structures{ 16 };
-  bool resource_bindings_updated = true; // Flag to indicate if resource bindings need to be updated. True initially to trigger first
+  bool resource_bindings_updated =
+    true; // Flag to indicate if resource bindings need to be updated. True
+          // initially to trigger first
   VkDescriptorSetLayout descriptor_set_layout{ VK_NULL_HANDLE };
   VkDescriptorSet descriptor_set{ VK_NULL_HANDLE };
   VkDescriptorPool descriptor_pool{ VK_NULL_HANDLE };

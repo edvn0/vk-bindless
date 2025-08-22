@@ -57,6 +57,7 @@ add_library(${PROJECT_NAME}
     src/swapchain.cpp
     src/event_system.cpp
     src/imgui_renderer.cpp
+    src/buffer.cpp
 )
 target_include_directories(${PROJECT_NAME}
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -76,11 +77,12 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         CustomVMA
         glfw
         Vulkan::glslang
-        ${SPIRV-Tools_LIBRARIES}
-        ${SPIRV-Tools-opt_LIBRARIES}
+        SPIRV-Tools-static
+        SPIRV-Tools-opt
         spirv-reflect-static
         PUBLIC
         glm::glm
+        imgui::imgui
 )
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_LEFT_HANDED)

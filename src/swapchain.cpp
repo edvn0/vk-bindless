@@ -476,6 +476,12 @@ Swapchain::resize(std::uint32_t new_width, std::uint32_t new_height) -> void
 }
 
 auto
+Swapchain::surface_format() const -> const VkSurfaceFormatKHR&
+{
+  return swapchain_surface_format;
+}
+
+auto
 Swapchain::present(VkSemaphore wait_semaphore)
   -> Expected<void, SwapchainPresentFailure>
 {

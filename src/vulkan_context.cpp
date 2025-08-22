@@ -27,128 +27,210 @@ namespace VkBindless {
 auto
 format_to_vk_format(const Format format) -> VkFormat
 {
-    switch (format) {
+  switch (format) {
     case Format::Invalid:
-        return VK_FORMAT_UNDEFINED;
+      return VK_FORMAT_UNDEFINED;
 
-    case Format::R_UN8:   return VK_FORMAT_R8_UNORM;
-    case Format::R_UI16:  return VK_FORMAT_R16_UINT;
-    case Format::R_UI32:  return VK_FORMAT_R32_UINT;
-    case Format::R_UN16:  return VK_FORMAT_R16_UNORM;
-    case Format::R_F16:   return VK_FORMAT_R16_SFLOAT;
-    case Format::R_F32:   return VK_FORMAT_R32_SFLOAT;
+    case Format::R_UN8:
+      return VK_FORMAT_R8_UNORM;
+    case Format::R_UI16:
+      return VK_FORMAT_R16_UINT;
+    case Format::R_UI32:
+      return VK_FORMAT_R32_UINT;
+    case Format::R_UN16:
+      return VK_FORMAT_R16_UNORM;
+    case Format::R_F16:
+      return VK_FORMAT_R16_SFLOAT;
+    case Format::R_F32:
+      return VK_FORMAT_R32_SFLOAT;
 
-    case Format::RG_UN8:  return VK_FORMAT_R8G8_UNORM;
-    case Format::RG_UI16: return VK_FORMAT_R16G16_UINT;
-    case Format::RG_UI32: return VK_FORMAT_R32G32_UINT;
-    case Format::RG_UN16: return VK_FORMAT_R16G16_UNORM;
-    case Format::RG_F16:  return VK_FORMAT_R16G16_SFLOAT;
-    case Format::RG_F32:  return VK_FORMAT_R32G32_SFLOAT;
+    case Format::RG_UN8:
+      return VK_FORMAT_R8G8_UNORM;
+    case Format::RG_UI16:
+      return VK_FORMAT_R16G16_UINT;
+    case Format::RG_UI32:
+      return VK_FORMAT_R32G32_UINT;
+    case Format::RG_UN16:
+      return VK_FORMAT_R16G16_UNORM;
+    case Format::RG_F16:
+      return VK_FORMAT_R16G16_SFLOAT;
+    case Format::RG_F32:
+      return VK_FORMAT_R32G32_SFLOAT;
 
-    case Format::RGBA_UN8:   return VK_FORMAT_R8G8B8A8_UNORM;
-    case Format::RGBA_UI32:  return VK_FORMAT_R32G32B32A32_UINT;
-    case Format::RGBA_F16:   return VK_FORMAT_R16G16B16A16_SFLOAT;
-    case Format::RGBA_F32:   return VK_FORMAT_R32G32B32A32_SFLOAT;
-    case Format::RGBA_SRGB8: return VK_FORMAT_R8G8B8A8_SRGB;
+    case Format::RGBA_UN8:
+      return VK_FORMAT_R8G8B8A8_UNORM;
+    case Format::RGBA_UI32:
+      return VK_FORMAT_R32G32B32A32_UINT;
+    case Format::RGBA_F16:
+      return VK_FORMAT_R16G16B16A16_SFLOAT;
+    case Format::RGBA_F32:
+      return VK_FORMAT_R32G32B32A32_SFLOAT;
+    case Format::RGBA_SRGB8:
+      return VK_FORMAT_R8G8B8A8_SRGB;
 
-    case Format::BGRA_UN8:   return VK_FORMAT_B8G8R8A8_UNORM;
-    case Format::BGRA_SRGB8: return VK_FORMAT_B8G8R8A8_SRGB;
+    case Format::BGRA_UN8:
+      return VK_FORMAT_B8G8R8A8_UNORM;
+    case Format::BGRA_SRGB8:
+      return VK_FORMAT_B8G8R8A8_SRGB;
 
-    case Format::A2B10G10R10_UN: return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
-    case Format::A2R10G10B10_UN: return VK_FORMAT_A2R10G10B10_UNORM_PACK32;
+    case Format::A2B10G10R10_UN:
+      return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+    case Format::A2R10G10B10_UN:
+      return VK_FORMAT_A2R10G10B10_UNORM_PACK32;
 
-    case Format::ETC2_RGB8:   return VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;
-    case Format::ETC2_SRGB8:  return VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK;
-    case Format::BC7_RGBA:    return VK_FORMAT_BC7_UNORM_BLOCK;
+    case Format::ETC2_RGB8:
+      return VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;
+    case Format::ETC2_SRGB8:
+      return VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK;
+    case Format::BC7_RGBA:
+      return VK_FORMAT_BC7_UNORM_BLOCK;
 
-    case Format::Z_UN16:      return VK_FORMAT_D16_UNORM;
-    case Format::Z_UN24:      return VK_FORMAT_X8_D24_UNORM_PACK32;
-    case Format::Z_F32:       return VK_FORMAT_D32_SFLOAT;
-    case Format::Z_UN24_S_UI8:return VK_FORMAT_D24_UNORM_S8_UINT;
-    case Format::Z_F32_S_UI8: return VK_FORMAT_D32_SFLOAT_S8_UINT;
+    case Format::Z_UN16:
+      return VK_FORMAT_D16_UNORM;
+    case Format::Z_UN24:
+      return VK_FORMAT_X8_D24_UNORM_PACK32;
+    case Format::Z_F32:
+      return VK_FORMAT_D32_SFLOAT;
+    case Format::Z_UN24_S_UI8:
+      return VK_FORMAT_D24_UNORM_S8_UINT;
+    case Format::Z_F32_S_UI8:
+      return VK_FORMAT_D32_SFLOAT_S8_UINT;
 
-    case Format::YUV_NV12:    return VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
-    case Format::YUV_420p:    return VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM;
-    }
-    return VK_FORMAT_UNDEFINED;
+    case Format::YUV_NV12:
+      return VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+    case Format::YUV_420p:
+      return VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM;
+  }
+  return VK_FORMAT_UNDEFINED;
 }
 
-auto vk_format_to_format(const VkFormat format) -> Format
+auto
+vk_format_to_format(const VkFormat format) -> Format
 {
-    switch (format) {
-    case VK_FORMAT_UNDEFINED: return Format::Invalid;
+  switch (format) {
+    case VK_FORMAT_UNDEFINED:
+      return Format::Invalid;
 
-    case VK_FORMAT_R8_UNORM:   return Format::R_UN8;
-    case VK_FORMAT_R16_UINT:   return Format::R_UI16;
-    case VK_FORMAT_R32_UINT:   return Format::R_UI32;
-    case VK_FORMAT_R16_UNORM:  return Format::R_UN16;
-    case VK_FORMAT_R16_SFLOAT: return Format::R_F16;
-    case VK_FORMAT_R32_SFLOAT: return Format::R_F32;
+    case VK_FORMAT_R8_UNORM:
+      return Format::R_UN8;
+    case VK_FORMAT_R16_UINT:
+      return Format::R_UI16;
+    case VK_FORMAT_R32_UINT:
+      return Format::R_UI32;
+    case VK_FORMAT_R16_UNORM:
+      return Format::R_UN16;
+    case VK_FORMAT_R16_SFLOAT:
+      return Format::R_F16;
+    case VK_FORMAT_R32_SFLOAT:
+      return Format::R_F32;
 
-    case VK_FORMAT_R8G8_UNORM:      return Format::RG_UN8;
-    case VK_FORMAT_R16G16_UINT:     return Format::RG_UI16;
-    case VK_FORMAT_R32G32_UINT:     return Format::RG_UI32;
-    case VK_FORMAT_R16G16_UNORM:    return Format::RG_UN16;
-    case VK_FORMAT_R16G16_SFLOAT:   return Format::RG_F16;
-    case VK_FORMAT_R32G32_SFLOAT:   return Format::RG_F32;
+    case VK_FORMAT_R8G8_UNORM:
+      return Format::RG_UN8;
+    case VK_FORMAT_R16G16_UINT:
+      return Format::RG_UI16;
+    case VK_FORMAT_R32G32_UINT:
+      return Format::RG_UI32;
+    case VK_FORMAT_R16G16_UNORM:
+      return Format::RG_UN16;
+    case VK_FORMAT_R16G16_SFLOAT:
+      return Format::RG_F16;
+    case VK_FORMAT_R32G32_SFLOAT:
+      return Format::RG_F32;
 
-    case VK_FORMAT_R8G8B8A8_UNORM:  return Format::RGBA_UN8;
-    case VK_FORMAT_R32G32B32A32_UINT: return Format::RGBA_UI32;
-    case VK_FORMAT_R16G16B16A16_SFLOAT: return Format::RGBA_F16;
-    case VK_FORMAT_R32G32B32A32_SFLOAT: return Format::RGBA_F32;
-    case VK_FORMAT_R8G8B8A8_SRGB:   return Format::RGBA_SRGB8;
+    case VK_FORMAT_R8G8B8A8_UNORM:
+      return Format::RGBA_UN8;
+    case VK_FORMAT_R32G32B32A32_UINT:
+      return Format::RGBA_UI32;
+    case VK_FORMAT_R16G16B16A16_SFLOAT:
+      return Format::RGBA_F16;
+    case VK_FORMAT_R32G32B32A32_SFLOAT:
+      return Format::RGBA_F32;
+    case VK_FORMAT_R8G8B8A8_SRGB:
+      return Format::RGBA_SRGB8;
 
-    case VK_FORMAT_B8G8R8A8_UNORM:  return Format::BGRA_UN8;
-    case VK_FORMAT_B8G8R8A8_SRGB:   return Format::BGRA_SRGB8;
+    case VK_FORMAT_B8G8R8A8_UNORM:
+      return Format::BGRA_UN8;
+    case VK_FORMAT_B8G8R8A8_SRGB:
+      return Format::BGRA_SRGB8;
 
-    case VK_FORMAT_A2B10G10R10_UNORM_PACK32: return Format::A2B10G10R10_UN;
-    case VK_FORMAT_A2R10G10B10_UNORM_PACK32: return Format::A2R10G10B10_UN;
+    case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+      return Format::A2B10G10R10_UN;
+    case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
+      return Format::A2R10G10B10_UN;
 
-    case VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK: return Format::ETC2_RGB8;
-    case VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK:  return Format::ETC2_SRGB8;
-    case VK_FORMAT_BC7_UNORM_BLOCK:         return Format::BC7_RGBA;
+    case VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK:
+      return Format::ETC2_RGB8;
+    case VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK:
+      return Format::ETC2_SRGB8;
+    case VK_FORMAT_BC7_UNORM_BLOCK:
+      return Format::BC7_RGBA;
 
-    case VK_FORMAT_D16_UNORM:               return Format::Z_UN16;
-    case VK_FORMAT_X8_D24_UNORM_PACK32:     return Format::Z_UN24;
-    case VK_FORMAT_D32_SFLOAT:              return Format::Z_F32;
-    case VK_FORMAT_D24_UNORM_S8_UINT:       return Format::Z_UN24_S_UI8;
-    case VK_FORMAT_D32_SFLOAT_S8_UINT:      return Format::Z_F32_S_UI8;
+    case VK_FORMAT_D16_UNORM:
+      return Format::Z_UN16;
+    case VK_FORMAT_X8_D24_UNORM_PACK32:
+      return Format::Z_UN24;
+    case VK_FORMAT_D32_SFLOAT:
+      return Format::Z_F32;
+    case VK_FORMAT_D24_UNORM_S8_UINT:
+      return Format::Z_UN24_S_UI8;
+    case VK_FORMAT_D32_SFLOAT_S8_UINT:
+      return Format::Z_F32_S_UI8;
 
-    case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM: return Format::YUV_NV12;
-    case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM: return Format::YUV_420p;
-      default:
-        return Format::Invalid;
-    }
+    case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
+      return Format::YUV_NV12;
+    case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
+      return Format::YUV_420p;
+    default:
+      return Format::Invalid;
+  }
 }
-
 
 namespace {
 
 auto
 blend_factor_to_vk_blend_factor(BlendFactor blend_factor) -> VkBlendFactor
 {
-    switch (blend_factor) {
-    case BlendFactor::Zero:                 return VK_BLEND_FACTOR_ZERO;
-    case BlendFactor::One:                  return VK_BLEND_FACTOR_ONE;
-    case BlendFactor::SrcColor:             return VK_BLEND_FACTOR_SRC_COLOR;
-    case BlendFactor::OneMinusSrcColor:     return VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
-    case BlendFactor::SrcAlpha:             return VK_BLEND_FACTOR_SRC_ALPHA;
-    case BlendFactor::OneMinusSrcAlpha:     return VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    case BlendFactor::DstColor:             return VK_BLEND_FACTOR_DST_COLOR;
-    case BlendFactor::OneMinusDstColor:     return VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
-    case BlendFactor::DstAlpha:             return VK_BLEND_FACTOR_DST_ALPHA;
-    case BlendFactor::OneMinusDstAlpha:     return VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
-    case BlendFactor::SrcAlphaSaturated:    return VK_BLEND_FACTOR_SRC_ALPHA_SATURATE;
-    case BlendFactor::BlendColor:           return VK_BLEND_FACTOR_CONSTANT_COLOR;
-    case BlendFactor::OneMinusBlendColor:   return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
-    case BlendFactor::BlendAlpha:           return VK_BLEND_FACTOR_CONSTANT_ALPHA;
-    case BlendFactor::OneMinusBlendAlpha:   return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
-    case BlendFactor::Src1Color:            return VK_BLEND_FACTOR_SRC1_COLOR;
-    case BlendFactor::OneMinusSrc1Color:    return VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR;
-    case BlendFactor::Src1Alpha:            return VK_BLEND_FACTOR_SRC1_ALPHA;
-    case BlendFactor::OneMinusSrc1Alpha:    return VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA;
-    }
-    return VK_BLEND_FACTOR_ZERO;
+  switch (blend_factor) {
+    case BlendFactor::Zero:
+      return VK_BLEND_FACTOR_ZERO;
+    case BlendFactor::One:
+      return VK_BLEND_FACTOR_ONE;
+    case BlendFactor::SrcColor:
+      return VK_BLEND_FACTOR_SRC_COLOR;
+    case BlendFactor::OneMinusSrcColor:
+      return VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+    case BlendFactor::SrcAlpha:
+      return VK_BLEND_FACTOR_SRC_ALPHA;
+    case BlendFactor::OneMinusSrcAlpha:
+      return VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    case BlendFactor::DstColor:
+      return VK_BLEND_FACTOR_DST_COLOR;
+    case BlendFactor::OneMinusDstColor:
+      return VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+    case BlendFactor::DstAlpha:
+      return VK_BLEND_FACTOR_DST_ALPHA;
+    case BlendFactor::OneMinusDstAlpha:
+      return VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
+    case BlendFactor::SrcAlphaSaturated:
+      return VK_BLEND_FACTOR_SRC_ALPHA_SATURATE;
+    case BlendFactor::BlendColor:
+      return VK_BLEND_FACTOR_CONSTANT_COLOR;
+    case BlendFactor::OneMinusBlendColor:
+      return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
+    case BlendFactor::BlendAlpha:
+      return VK_BLEND_FACTOR_CONSTANT_ALPHA;
+    case BlendFactor::OneMinusBlendAlpha:
+      return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
+    case BlendFactor::Src1Color:
+      return VK_BLEND_FACTOR_SRC1_COLOR;
+    case BlendFactor::OneMinusSrc1Color:
+      return VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR;
+    case BlendFactor::Src1Alpha:
+      return VK_BLEND_FACTOR_SRC1_ALPHA;
+    case BlendFactor::OneMinusSrc1Alpha:
+      return VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA;
+  }
+  return VK_BLEND_FACTOR_ZERO;
 }
 
 auto
@@ -171,76 +253,107 @@ blend_op_to_vk_blend_op(BlendOp blend_op) -> VkBlendOp
 auto
 topology_to_vk_topology(Topology topology) -> VkPrimitiveTopology
 {
-    switch (topology) {
-    case Topology::Point:          return VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
-    case Topology::Line:           return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
-    case Topology::LineStrip:      return VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
-    case Topology::Triangle:       return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    case Topology::TriangleStrip:  return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
-    case Topology::Patch:          return VK_PRIMITIVE_TOPOLOGY_PATCH_LIST;
-    }
-    return VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
+  switch (topology) {
+    case Topology::Point:
+      return VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+    case Topology::Line:
+      return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    case Topology::LineStrip:
+      return VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
+    case Topology::Triangle:
+      return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    case Topology::TriangleStrip:
+      return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+    case Topology::Patch:
+      return VK_PRIMITIVE_TOPOLOGY_PATCH_LIST;
+  }
+  return VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
 }
 
 auto
 polygon_mode_to_vk_polygon_mode(PolygonMode polygon_mode) -> VkPolygonMode
 {
-    switch (polygon_mode) {
-    case PolygonMode::Fill: return VK_POLYGON_MODE_FILL;
-    case PolygonMode::Line: return VK_POLYGON_MODE_LINE;
-    }
-    return VK_POLYGON_MODE_FILL;
+  switch (polygon_mode) {
+    case PolygonMode::Fill:
+      return VK_POLYGON_MODE_FILL;
+    case PolygonMode::Line:
+      return VK_POLYGON_MODE_LINE;
+  }
+  return VK_POLYGON_MODE_FILL;
 }
 
 auto
 cull_mode_to_vk_cull_mode(CullMode cull_mode) -> VkCullModeFlags
 {
-    switch (cull_mode) {
-    case CullMode::None:  return VK_CULL_MODE_NONE;
-    case CullMode::Front: return VK_CULL_MODE_FRONT_BIT;
-    case CullMode::Back:  return VK_CULL_MODE_BACK_BIT;
-    }
-    return VK_CULL_MODE_NONE;
+  switch (cull_mode) {
+    case CullMode::None:
+      return VK_CULL_MODE_NONE;
+    case CullMode::Front:
+      return VK_CULL_MODE_FRONT_BIT;
+    case CullMode::Back:
+      return VK_CULL_MODE_BACK_BIT;
+  }
+  return VK_CULL_MODE_NONE;
 }
 
 auto
 winding_to_vk_winding(WindingMode winding) -> VkFrontFace
 {
-    switch (winding) {
-    case WindingMode::CCW: return VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    case WindingMode::CW:  return VK_FRONT_FACE_CLOCKWISE;
-    }
-    return VK_FRONT_FACE_COUNTER_CLOCKWISE;
+  switch (winding) {
+    case WindingMode::CCW:
+      return VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    case WindingMode::CW:
+      return VK_FRONT_FACE_CLOCKWISE;
+  }
+  return VK_FRONT_FACE_COUNTER_CLOCKWISE;
 }
 
 auto
 stencil_op_to_vk_stencil_op(StencilOp stencil_op) -> VkStencilOp
 {
-    switch (stencil_op) {
-    case StencilOp::Keep:           return VK_STENCIL_OP_KEEP;
-    case StencilOp::Zero:           return VK_STENCIL_OP_ZERO;
-    case StencilOp::Replace:        return VK_STENCIL_OP_REPLACE;
-    case StencilOp::IncrementClamp: return VK_STENCIL_OP_INCREMENT_AND_CLAMP;
-    case StencilOp::DecrementClamp: return VK_STENCIL_OP_DECREMENT_AND_CLAMP;
-    case StencilOp::Invert:         return VK_STENCIL_OP_INVERT;
-    case StencilOp::IncrementWrap:  return VK_STENCIL_OP_INCREMENT_AND_WRAP;
-    case StencilOp::DecrementWrap:  return VK_STENCIL_OP_DECREMENT_AND_WRAP;
-    }
-    return VK_STENCIL_OP_KEEP;
+  switch (stencil_op) {
+    case StencilOp::Keep:
+      return VK_STENCIL_OP_KEEP;
+    case StencilOp::Zero:
+      return VK_STENCIL_OP_ZERO;
+    case StencilOp::Replace:
+      return VK_STENCIL_OP_REPLACE;
+    case StencilOp::IncrementClamp:
+      return VK_STENCIL_OP_INCREMENT_AND_CLAMP;
+    case StencilOp::DecrementClamp:
+      return VK_STENCIL_OP_DECREMENT_AND_CLAMP;
+    case StencilOp::Invert:
+      return VK_STENCIL_OP_INVERT;
+    case StencilOp::IncrementWrap:
+      return VK_STENCIL_OP_INCREMENT_AND_WRAP;
+    case StencilOp::DecrementWrap:
+      return VK_STENCIL_OP_DECREMENT_AND_WRAP;
+  }
+  return VK_STENCIL_OP_KEEP;
 }
 
-auto compare_op_to_vk_compare_op(CompareOp compare_op) -> VkCompareOp {
-    switch (compare_op) {
-    case CompareOp::Never:        return VK_COMPARE_OP_NEVER;
-    case CompareOp::Less:         return VK_COMPARE_OP_LESS;
-    case CompareOp::Equal:        return VK_COMPARE_OP_EQUAL;
-    case CompareOp::LessEqual:    return VK_COMPARE_OP_LESS_OR_EQUAL;
-    case CompareOp::Greater:      return VK_COMPARE_OP_GREATER;
-    case CompareOp::NotEqual:     return VK_COMPARE_OP_NOT_EQUAL;
-    case CompareOp::GreaterEqual: return VK_COMPARE_OP_GREATER_OR_EQUAL;
-    case CompareOp::AlwaysPass:   return VK_COMPARE_OP_ALWAYS;
-    }
-    return VK_COMPARE_OP_ALWAYS;
+auto
+compare_op_to_vk_compare_op(CompareOp compare_op) -> VkCompareOp
+{
+  switch (compare_op) {
+    case CompareOp::Never:
+      return VK_COMPARE_OP_NEVER;
+    case CompareOp::Less:
+      return VK_COMPARE_OP_LESS;
+    case CompareOp::Equal:
+      return VK_COMPARE_OP_EQUAL;
+    case CompareOp::LessEqual:
+      return VK_COMPARE_OP_LESS_OR_EQUAL;
+    case CompareOp::Greater:
+      return VK_COMPARE_OP_GREATER;
+    case CompareOp::NotEqual:
+      return VK_COMPARE_OP_NOT_EQUAL;
+    case CompareOp::GreaterEqual:
+      return VK_COMPARE_OP_GREATER_OR_EQUAL;
+    case CompareOp::AlwaysPass:
+      return VK_COMPARE_OP_ALWAYS;
+  }
+  return VK_COMPARE_OP_ALWAYS;
 }
 
 auto
@@ -270,7 +383,6 @@ constexpr VkShaderStageFlags all_stages_flags =
   VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
   VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 }
-
 
 Context::~Context()
 {
@@ -996,7 +1108,7 @@ Context::create_placeholder_resources() -> void
       *this,
       VkTextureDescription{
         .data = std::span(dummy_white_texture),
-        .format = vk_format_to_format( VK_FORMAT_R8G8B8A8_UNORM),
+        .format = vk_format_to_format(VK_FORMAT_R8G8B8A8_UNORM),
         .extent = { 1, 1, 1 },
         .usage_flags = TextureUsageFlags::Sampled | TextureUsageFlags::Storage,
         .debug_name = "Dummy White Texture (1x1)",
@@ -1110,9 +1222,9 @@ Context::get_current_swapchain_texture() -> TextureHandle
   return swapchain->current_texture();
 }
 
-
 auto
-Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask) -> VkPipeline
+Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask)
+  -> VkPipeline
 {
   auto* rps = *get_graphics_pipeline_pool().get(handle);
 
@@ -1122,10 +1234,9 @@ Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask) -> 
 
   if (rps->last_descriptor_set_layout != descriptor_set_layout ||
       rps->view_mask != viewMask) {
-    pre_frame_task(
-      [l = rps->get_layout()](auto dev, auto callbacks) {
-        vkDestroyPipelineLayout(dev, l, callbacks);
-      });
+    pre_frame_task([l = rps->get_layout()](auto dev, auto callbacks) {
+      vkDestroyPipelineLayout(dev, l, callbacks);
+    });
     pre_frame_task([p = rps->get_pipeline()](auto dev, auto callbacks) {
       vkDestroyPipeline(dev, p, callbacks);
     });
@@ -1153,7 +1264,7 @@ Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask) -> 
   // only for active attachments
   std::array<VkPipelineColorBlendAttachmentState, max_colour_attachments>
     color_blend_attachment_states{};
-  std::array<VkFormat, max_colour_attachments> color_attachment_formats {};
+  std::array<VkFormat, max_colour_attachments> color_attachment_formats{};
 
   for (auto i = 0U; i != colour_attachments_count; i++) {
     const auto& [format,
@@ -1218,30 +1329,32 @@ Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask) -> 
       rps->attribute_count > 0 ? rps->attributes.data() : nullptr,
   };
 
-  std::array<VkSpecializationMapEntry, SpecialisationConstantDescription::max_specialization_constants> entries{};
+  std::array<VkSpecializationMapEntry,
+             SpecialisationConstantDescription::max_specialization_constants>
+    entries{};
 
-  static constexpr auto get_pipeline_specialisation_info = [](const SpecialisationConstantDescription& desc,
-                                                    auto& spec_entries) {
+  static constexpr auto get_pipeline_specialisation_info =
+    [](const SpecialisationConstantDescription& desc, auto& spec_entries) {
       const auto num_entries = desc.get_specialisation_constants_count();
-    for (auto i = 0U; i < num_entries; ++i) {
+      for (auto i = 0U; i < num_entries; ++i) {
         const auto& [constant_id, offset, size] = desc.entries.at(i);
-      spec_entries[i] = VkSpecializationMapEntry{
-        .constantID = constant_id,
-        .offset = offset,
-        .size = size,
+        spec_entries[i] = VkSpecializationMapEntry{
+          .constantID = constant_id,
+          .offset = offset,
+          .size = size,
+        };
+      }
+
+      return VkSpecializationInfo{
+        .mapEntryCount = num_entries,
+        .pMapEntries = spec_entries.data(),
+        .dataSize = desc.data.size_bytes(),
+        .pData = desc.data.data(),
       };
-    }
-
-    return VkSpecializationInfo{
-      .mapEntryCount = num_entries,
-      .pMapEntries = spec_entries.data(),
-      .dataSize = desc.data.size_bytes(),
-      .pData = desc.data.data(),
     };
-  };
 
-  const VkSpecializationInfo si = get_pipeline_specialisation_info(
-    desc.specialisation_constants, entries);
+  const VkSpecializationInfo si =
+    get_pipeline_specialisation_info(desc.specialisation_constants, entries);
 
   // create pipeline layout
   {
@@ -1255,8 +1368,10 @@ Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask) -> 
     // duplicate for MoltenVK
     const VkDescriptorSetLayout dsls[] = { descriptor_set_layout,
                                            descriptor_set_layout,
-                                           descriptor_set_layout, descriptor_set_layout };
-    auto min_align = vulkan_properties.base.limits.minUniformBufferOffsetAlignment;
+                                           descriptor_set_layout,
+                                           descriptor_set_layout };
+    auto min_align =
+      vulkan_properties.base.limits.minUniformBufferOffsetAlignment;
 
     const VkPushConstantRange range = {
       .stageFlags = rps->stage_flags,
@@ -1303,7 +1418,8 @@ Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask) -> 
   ci_rs.depthBiasEnable = VK_FALSE;
   ci_rs.lineWidth = 1.0f;
 
-  auto getVulkanSampleCountFlags = [](const uint32_t sample_count, VkSampleCountFlags max_samples_mask) {
+  auto getVulkanSampleCountFlags = [](const uint32_t sample_count,
+                                      VkSampleCountFlags max_samples_mask) {
     if (sample_count <= 1 || VK_SAMPLE_COUNT_2_BIT > max_samples_mask) {
       return VK_SAMPLE_COUNT_1_BIT;
     }
@@ -1333,15 +1449,17 @@ Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask) -> 
   VkPipelineMultisampleStateCreateInfo ci_ms{};
   ci_ms.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
   ci_ms.rasterizationSamples = samples;
-  ci_ms.sampleShadingEnable = desc.min_sample_shading > 0.0f ? VK_TRUE : VK_FALSE;
+  ci_ms.sampleShadingEnable =
+    desc.min_sample_shading > 0.0f ? VK_TRUE : VK_FALSE;
   ci_ms.minSampleShading = desc.min_sample_shading;
 
   VkStencilOpState front{};
-  front.failOp = stencil_op_to_vk_stencil_op(desc.front_face_stencil.stencil_failure_operation);
-  front.passOp =
-    stencil_op_to_vk_stencil_op(desc.front_face_stencil.depth_stencil_pass_operation);
-  front.depthFailOp =
-    stencil_op_to_vk_stencil_op(desc.front_face_stencil.depth_failure_operation);
+  front.failOp = stencil_op_to_vk_stencil_op(
+    desc.front_face_stencil.stencil_failure_operation);
+  front.passOp = stencil_op_to_vk_stencil_op(
+    desc.front_face_stencil.depth_stencil_pass_operation);
+  front.depthFailOp = stencil_op_to_vk_stencil_op(
+    desc.front_face_stencil.depth_failure_operation);
   front.compareOp =
     compare_op_to_vk_compare_op(desc.front_face_stencil.stencil_compare_op);
   front.compareMask = desc.front_face_stencil.read_mask;
@@ -1349,8 +1467,10 @@ Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask) -> 
   front.reference = 0xFF;
 
   VkStencilOpState back{};
-  back.failOp = stencil_op_to_vk_stencil_op(desc.back_face_stencil.stencil_failure_operation);
-  back.passOp = stencil_op_to_vk_stencil_op(desc.back_face_stencil.depth_stencil_pass_operation);
+  back.failOp = stencil_op_to_vk_stencil_op(
+    desc.back_face_stencil.stencil_failure_operation);
+  back.passOp = stencil_op_to_vk_stencil_op(
+    desc.back_face_stencil.depth_stencil_pass_operation);
   back.depthFailOp =
     stencil_op_to_vk_stencil_op(desc.back_face_stencil.depth_failure_operation);
   back.compareOp =
@@ -1366,8 +1486,9 @@ Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask) -> 
   ci_ds.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL; // dynamic
   ci_ds.depthBoundsTestEnable = VK_FALSE;
   ci_ds.stencilTestEnable =
-    (desc.front_face_stencil.enabled || desc.back_face_stencil.enabled) ? VK_TRUE
-                                                                    : VK_FALSE;
+    (desc.front_face_stencil.enabled || desc.back_face_stencil.enabled)
+      ? VK_TRUE
+      : VK_FALSE;
   ci_ds.front = front;
   ci_ds.back = back;
 
@@ -1399,7 +1520,8 @@ Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask) -> 
   ci_rendering.colorAttachmentCount = colour_attachments_count;
   ci_rendering.pColorAttachmentFormats = color_attachment_formats.data();
   ci_rendering.depthAttachmentFormat = format_to_vk_format(desc.depth_format);
-  ci_rendering.stencilAttachmentFormat = format_to_vk_format(desc.stencil_format);
+  ci_rendering.stencilAttachmentFormat =
+    format_to_vk_format(desc.stencil_format);
 
   VkGraphicsPipelineCreateInfo ci_gp{};
   ci_gp.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -1427,6 +1549,99 @@ Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask) -> 
   rps->layout = layout;
 
   return pipeline;
+}
+
+auto
+Context::get_dimensions(TextureHandle handle) const -> Dimensions
+{
+  const auto maybe_texture = texture_pool.get(handle);
+  if (!maybe_texture.has_value()) {
+    std::cerr << "Invalid texture handle: " << handle.index() << std::endl
+              << "Generation: " << handle.generation() << std::endl;
+    return { 0, 0, 0 };
+  }
+
+  const auto* texture = maybe_texture.value();
+  if (texture == nullptr) {
+    return { 0, 0, 0 };
+  }
+
+  const auto& extent = texture->get_extent();
+  return {
+    extent.width,
+    extent.height,
+    extent.depth,
+  };
+}
+auto
+Context::get_device_address(BufferHandle handle) -> std::uint64_t
+{
+  const auto maybe_buffer = get_buffer_pool().get(handle);
+  if (!maybe_buffer.has_value()) {
+    std::cerr << "Invalid buffer handle: " << handle.index() << std::endl
+              << "Generation: " << handle.generation() << std::endl;
+    return 0;
+  }
+
+  const auto* buffer = maybe_buffer.value();
+  if (buffer == nullptr) {
+    return 0;
+  }
+
+  const VkBufferDeviceAddressInfo info{
+    .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+    .pNext = nullptr,
+    .buffer = buffer->get_buffer(),
+  };
+  return vkGetBufferDeviceAddress(get_device(), &info);
+}
+
+auto
+Context::get_mapped_pointer(BufferHandle handle) -> void*
+{
+  const auto maybe_buffer = get_buffer_pool().get(handle);
+  if (!maybe_buffer.has_value()) {
+    std::cerr << "Invalid buffer handle: " << handle.index() << std::endl
+              << "Generation: " << handle.generation() << std::endl;
+    return nullptr;
+  }
+
+  const auto* buffer = maybe_buffer.value();
+  if (buffer == nullptr) {
+    return nullptr;
+  }
+
+  if (!buffer->is_mapped()) {
+    std::cerr << "Buffer is not mapped: " << handle.index() << std::endl;
+    return nullptr;
+  }
+
+  return buffer->get_mapped_pointer();
+}
+auto
+Context::flush_mapped_memory(BufferHandle handle,
+                             std::uint64_t offset,
+                             std::uint64_t size) -> void
+{
+  const auto maybe_buffer = get_buffer_pool().get(handle);
+  if (!maybe_buffer.has_value()) {
+    std::cerr << "Invalid buffer handle: " << handle.index() << std::endl
+              << "Generation: " << handle.generation() << std::endl;
+    return;
+  }
+
+  const auto* buffer = maybe_buffer.value();
+  if (buffer == nullptr) {
+    return;
+  }
+
+  if (!buffer->is_mapped()) {
+    std::cerr << "Buffer is not mapped: " << handle.index() << std::endl;
+    return;
+  }
+
+  get_allocator_implementation().flush_allocation(
+    buffer->get_buffer(), offset, size);
 }
 
 #pragma region Destroyers
@@ -1488,9 +1703,22 @@ Context::destroy(const TextureHandle handle) -> void
 }
 
 auto
-Context::destroy(BufferHandle) -> void
+Context::destroy(BufferHandle handle) -> void
 {
-  TODO("Implement buffer destruction");
+  SCOPE_EXIT
+  {
+    if (const auto exp = get_buffer_pool().destroy(handle); !exp.has_value()) {
+      std::cerr << "Failed to destroy buffer: "
+                << std::to_underlying(exp.error()) << std::endl;
+    }
+  };
+  auto buf = *get_buffer_pool().get(handle);
+  if (!buf)
+    return;
+  pre_frame_task([&vma = get_allocator_implementation(),
+                  buffer = buf->get_buffer()](auto, auto) {
+    vma.deallocate_buffer(buffer);
+  });
 }
 
 auto

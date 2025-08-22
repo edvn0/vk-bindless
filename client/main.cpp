@@ -1,3 +1,4 @@
+#include "imgui.h"
 #include "vk-bindless/command_buffer.hpp"
 #include "vk-bindless/event_system.hpp"
 #include "vk-bindless/graphics_context.hpp"
@@ -15,8 +16,8 @@
 
 #include <bit>
 #include <cstdint>
-#include <glm/glm.hpp>
 #include <format>
+#include <glm/glm.hpp>
 #include <iostream>
 
 static auto
@@ -212,12 +213,26 @@ setup_event_callbacks(GLFWwindow* window, EventSystem::EventDispatcher* d)
       auto* dispatcher = static_cast<EventSystem::EventDispatcher*>(
         glfwGetWindowUserPointer(win));
       dispatcher->handle_mouse_button_callback(win, button, action, mods);
+
+      double xpos, ypos;
+      glfwGetCursorPos(win, &xpos, &ypos);
+      const ImGuiMouseButton_ imguiButton =
+        (button == GLFW_MOUSE_BUTTON_LEFT)
+          ? ImGuiMouseButton_Left
+          : (button == GLFW_MOUSE_BUTTON_RIGHT ? ImGuiMouseButton_Right
+                                               : ImGuiMouseButton_Middle);
+      ImGuiIO& io = ImGui::GetIO();
+      io.MousePos = ImVec2((float)xpos, (float)ypos);
+      io.MouseDown[imguiButton] = action == GLFW_PRESS;
     });
 
   glfwSetCursorPosCallback(window, [](GLFWwindow* win, double x, double y) {
     auto* dispatcher =
       static_cast<EventSystem::EventDispatcher*>(glfwGetWindowUserPointer(win));
     dispatcher->handle_cursor_pos_callback(win, x, y);
+
+    ImGui::GetIO().MousePos =
+      ImVec2(static_cast<float>(x), static_cast<float>(y));
   });
 
   glfwSetWindowSizeCallback(window, [](GLFWwindow* win, int width, int height) {
@@ -273,7 +288,8 @@ main() -> std::int32_t
 
   auto context = Context::create([win = window.get()](VkInstance instance) {
     VkSurfaceKHR surface;
-    if (const auto res = glfwCreateWindowSurface(instance, win, nullptr, &surface);
+    if (const auto res =
+          glfwCreateWindowSurface(instance, win, nullptr, &surface);
         res != VK_SUCCESS) {
       return as_null(surface);
     }
@@ -372,7 +388,7 @@ main() -> std::int32_t
     RenderPass render_pass {
       .color= { RenderPass::AttachmentDescription{
   .load_op = LoadOp::Clear,
-        .clear_colour = std::array{1.0F, 0.0F, 0.0F, 1.0F},
+        .clear_colour = std::array{1.0F, 1.0F, 1.0F, 0.0F},
       }, },
       .depth ={
         .load_op = LoadOp::Clear,
@@ -393,14 +409,20 @@ main() -> std::int32_t
 
     buf.cmd_begin_rendering(render_pass, framebuffer, {});
     imgui->begin_frame(framebuffer);
+
+    ImGui::Begin("Texture Viewer", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::Image(framebuffer.color.at(0).texture.index(), ImVec2(512, 512));
+    ImGui::ShowDemoWindow();
+    ImGui::End();
+
     struct PC
     {
-      glm::mat4 mvp{1.0F};
-      glm::vec4 light_direction{0.0F};
+      glm::mat4 mvp{ 1.0F };
+      glm::vec4 light_direction{ 0.0F };
     } pc{};
     // angles in radians
     const auto phi = glm::radians(200.0F);
-        const auto theta = glm::radians(30.0F);
+    const auto theta = glm::radians(30.0F);
 
     // spherical → Cartesian
     glm::vec3 dir;
@@ -409,24 +431,30 @@ main() -> std::int32_t
     dir.z = std::cos(phi) * std::sin(theta);
 
     // normalize for safety
-    dir   = glm::normalize(dir);
+    dir = glm::normalize(dir);
 
     // store in push constants
     pc.light_direction = glm::vec4(dir, 0.0f); // w=0 for a direction
     const auto view = glm::lookAt(glm::vec3(0.0F, 0.0F, 3.0F),
                                   glm::vec3(0.0F, 0.0F, 0.0F),
                                   glm::vec3(0.0F, 1.0F, 0.0F));
-    const auto projection = glm::perspective(
-      glm::radians(70.0F), static_cast<float>(new_width) / static_cast<float>(new_height), 0.1F,
-      1000.0F);
+    const auto projection = glm::perspective(glm::radians(70.0F),
+                                             static_cast<float>(new_width) /
+                                               static_cast<float>(new_height),
+                                             0.1F,
+                                             1000.0F);
 
-      const auto mvp = projection * view;
-  const auto angle = static_cast<float>(glfwGetTime());
-  const auto rotation = glm::rotate(glm::mat4(1.0F), angle, glm::vec3(0.0F, 1.0F, 0.0F));
-  pc.mvp = mvp * rotation;
+    const auto mvp = projection * view;
+    const auto angle = static_cast<float>(glfwGetTime());
+    const auto rotation =
+      glm::rotate(glm::mat4(1.0F), angle, glm::vec3(0.0F, 1.0F, 0.0F));
+    pc.mvp = mvp * rotation;
 
     buf.cmd_bind_graphics_pipeline(*cube_pipeline_handle);
-    buf.cmd_bind_depth_state({.compare_operation =  CompareOp::Greater, .is_depth_write_enabled = true,});
+    buf.cmd_bind_depth_state({
+      .compare_operation = CompareOp::Greater,
+      .is_depth_write_enabled = true,
+    });
     buf.cmd_push_constants<PC>(pc, 0);
     buf.cmd_draw(36, 1, 0, 0);
 

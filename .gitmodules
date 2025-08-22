@@ -19,3 +19,6 @@
 [submodule "third-party/glm"]
 	path = third-party/glm
 	url = git@github.com:g-truc/glm.git
+[submodule "third-party/imgui"]
+	path = third-party/imgui
+	url = git@github.com:ocornut/imgui.git
