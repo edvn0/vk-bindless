@@ -10,6 +10,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include "glm/ext/matrix_clip_space.hpp"
 #include "glm/ext/matrix_transform.hpp"
+#include "vk-bindless/camera.hpp"
 #include "vk-bindless/imgui_renderer.hpp"
 
 #include <GLFW/glfw3.h>
@@ -161,6 +162,87 @@ protected:
   }
 };
 
+class CameraInputHandler final
+  : public EventSystem::TypedEventHandler<EventSystem::KeyEvent,
+                                          EventSystem::MouseMoveEvent,
+                                          EventSystem::MouseButtonEvent>
+{
+  GLFWwindow* window{};
+  VkBindless::FirstPersonCameraBehaviour* behaviour{};
+  bool mouse_held{ false };
+  glm::vec2 mouse_norm{ 0 };
+
+public:
+  explicit CameraInputHandler(GLFWwindow* win,
+                              VkBindless::FirstPersonCameraBehaviour* b)
+    : window(win)
+    , behaviour(b)
+  {
+  }
+  [[nodiscard]] auto get_priority() const -> int override { return 800; }
+
+protected:
+  auto handle_event(const EventSystem::KeyEvent& e) -> bool override
+  {
+    if (ImGui::GetIO().WantCaptureKeyboard)
+      return false;
+    const bool pressed = e.action != GLFW_RELEASE;
+    switch (e.key) {
+      case GLFW_KEY_W:
+        behaviour->movement.forward = pressed;
+        break;
+      case GLFW_KEY_S:
+        behaviour->movement.backward = pressed;
+        break;
+      case GLFW_KEY_A:
+        behaviour->movement.left = pressed;
+        break;
+      case GLFW_KEY_D:
+        behaviour->movement.right = pressed;
+        break;
+      case GLFW_KEY_E:
+        behaviour->movement.up = pressed;
+        break;
+      case GLFW_KEY_Q:
+        behaviour->movement.down = pressed;
+        break;
+      case GLFW_KEY_LEFT_SHIFT:
+        behaviour->movement.fast_speed = pressed;
+        break;
+      default:
+        break;
+    }
+    return false;
+  }
+
+  auto handle_event(const EventSystem::MouseButtonEvent& e) -> bool override {
+    if (ImGui::GetIO().WantCaptureMouse) return false;
+    if (e.button == GLFW_MOUSE_BUTTON_RIGHT) {
+      mouse_held = (e.action == GLFW_PRESS);
+      glfwSetInputMode(window, GLFW_CURSOR,
+                       mouse_held ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+      if (mouse_held) behaviour->mouse_position = mouse_norm;
+    }
+    return mouse_held;
+  }
+
+  auto handle_event(const EventSystem::MouseMoveEvent& e) -> bool override {
+    int w{}, h{};
+    glfwGetFramebufferSize(window, &w, &h);
+    if (w > 0 && h > 0)
+      mouse_norm = { static_cast<float>(e.x_pos / w),
+                     1.0f - static_cast<float>(e.y_pos / h) };
+    return mouse_held;
+  }
+
+public:
+  auto tick(double dt) const -> void
+  {
+    const bool imgui_block = ImGui::GetIO().WantCaptureMouse;
+    behaviour->update(dt, mouse_norm, mouse_held && !imgui_block);
+  }
+};
+
 // UI handler (lower priority than game logic)
 class UIHandler final
   : public EventSystem::TypedEventHandler<EventSystem::KeyEvent,
@@ -216,14 +298,14 @@ setup_event_callbacks(GLFWwindow* window, EventSystem::EventDispatcher* d)
 
       double xpos, ypos;
       glfwGetCursorPos(win, &xpos, &ypos);
-      const ImGuiMouseButton_ imguiButton =
+      const ImGuiMouseButton_ imgui_button =
         (button == GLFW_MOUSE_BUTTON_LEFT)
           ? ImGuiMouseButton_Left
           : (button == GLFW_MOUSE_BUTTON_RIGHT ? ImGuiMouseButton_Right
                                                : ImGuiMouseButton_Middle);
       ImGuiIO& io = ImGui::GetIO();
-      io.MousePos = ImVec2((float)xpos, (float)ypos);
-      io.MouseDown[imguiButton] = action == GLFW_PRESS;
+      io.MousePos = ImVec2(static_cast<float>(xpos), static_cast<float>(ypos));
+      io.MouseDown[imgui_button] = action == GLFW_PRESS;
     });
 
   glfwSetCursorPosCallback(window, [](GLFWwindow* win, double x, double y) {
@@ -318,14 +400,26 @@ main() -> std::int32_t
     std::make_shared<WindowManager>(window.get(), &state);
   const auto game_handler = std::make_shared<GameLogicHandler>();
   const auto ui_handler = std::make_shared<UIHandler>();
+  auto camera_behaviour = std::make_unique<FirstPersonCameraBehaviour>(
+    glm::vec3{ 0, 3, -5.F }, glm::vec3{ 0, 1.5F, 0.0F }, glm::vec3{ 0, 1, 0 });
+  auto* camera_behaviour_ptr = camera_behaviour.get();
+  Camera camera(std::move(camera_behaviour));
+
+  const auto camera_input =
+    std::make_shared<CameraInputHandler>(window.get(), camera_behaviour_ptr);
+
+  event_dispatcher.subscribe<EventSystem::KeyEvent,
+                             EventSystem::MouseMoveEvent,
+                             EventSystem::MouseButtonEvent>(camera_input);
 
   // Subscribe handlers to events they care about
-  event_dispatcher.subscribe<EventSystem::KeyEvent>(window_manager);
-  event_dispatcher.subscribe<EventSystem::WindowResizeEvent>(window_manager);
+  event_dispatcher
+    .subscribe<EventSystem::WindowResizeEvent, EventSystem::KeyEvent>(
+      window_manager);
 
-  event_dispatcher.subscribe<EventSystem::KeyEvent>(game_handler);
-  event_dispatcher.subscribe<EventSystem::MouseButtonEvent>(game_handler);
-  event_dispatcher.subscribe<EventSystem::MouseMoveEvent>(game_handler);
+  event_dispatcher.subscribe<EventSystem::MouseMoveEvent,
+                             EventSystem::KeyEvent,
+                             EventSystem::MouseButtonEvent>(game_handler);
 
   event_dispatcher.subscribe<EventSystem::KeyEvent>(ui_handler);
 
@@ -343,7 +437,8 @@ main() -> std::int32_t
           .format = Format::BGRA_UN8,
         },
       },
-    .depth_format = Format::Z_F32,});
+    .depth_format = Format::Z_F32,
+    });
 
   SCOPE_EXIT
   {
@@ -376,8 +471,15 @@ main() -> std::int32_t
   auto imgui = std::make_unique<ImGuiRenderer>(
     *vulkan_context, "assets/fonts/Roboto-Regular.ttf");
 
+  double last_time = glfwGetTime();
   while (!glfwWindowShouldClose(window.get())) {
     event_dispatcher.process_events();
+
+    const double now = glfwGetTime();
+    const double dt = now - last_time;
+    last_time = now;
+
+    camera_input->tick(dt);
 
     glfwGetFramebufferSize(window.get(), &new_width, &new_height);
     if (!new_width || !new_height)
@@ -388,7 +490,7 @@ main() -> std::int32_t
     RenderPass render_pass {
       .color= { RenderPass::AttachmentDescription{
   .load_op = LoadOp::Clear,
-        .clear_colour = std::array{1.0F, 1.0F, 1.0F, 0.0F},
+        .clear_colour = std::array{1.0F, 1.0F, 1.0F, 1.0F},
       }, },
       .depth ={
         .load_op = LoadOp::Clear,
@@ -412,6 +514,20 @@ main() -> std::int32_t
 
     ImGui::Begin("Texture Viewer", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
     ImGui::Image(framebuffer.color.at(0).texture.index(), ImVec2(512, 512));
+    float rad_phi{};
+    float rad_theta{};
+    ImGui::SliderAngle("Light Direction (phi, theta)",
+                       &rad_phi,
+                       0.0F,
+                       360.0F,
+                       "%.1f",
+                       ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SliderAngle("Light Direction (theta)",
+                       &rad_theta,
+                       -180.0F,
+                       180.0F,
+                       "%.1f",
+                       ImGuiSliderFlags_AlwaysClamp);
     ImGui::ShowDemoWindow();
     ImGui::End();
 
@@ -421,34 +537,27 @@ main() -> std::int32_t
       glm::vec4 light_direction{ 0.0F };
     } pc{};
     // angles in radians
-    const auto phi = glm::radians(200.0F);
-    const auto theta = glm::radians(30.0F);
-
     // spherical → Cartesian
     glm::vec3 dir;
-    dir.x = std::cos(phi) * std::cos(theta);
-    dir.y = std::sin(phi);
-    dir.z = std::cos(phi) * std::sin(theta);
+    dir.x = std::cos(rad_phi) * std::cos(rad_theta);
+    dir.y = std::sin(rad_phi);
+    dir.z = std::cos(rad_phi) * std::sin(rad_theta);
 
     // normalize for safety
     dir = glm::normalize(dir);
 
     // store in push constants
     pc.light_direction = glm::vec4(dir, 0.0f); // w=0 for a direction
-    const auto view = glm::lookAt(glm::vec3(0.0F, 0.0F, 3.0F),
-                                  glm::vec3(0.0F, 0.0F, 0.0F),
-                                  glm::vec3(0.0F, 1.0F, 0.0F));
-    const auto projection = glm::perspective(glm::radians(70.0F),
-                                             static_cast<float>(new_width) /
-                                               static_cast<float>(new_height),
-                                             0.1F,
-                                             1000.0F);
+    const auto view = camera.get_view_matrix();
+    auto projection = glm::infinitePerspectiveLH_ZO(
+      glm::radians(70.0F),
+      static_cast<float>(new_width) / static_cast<float>(new_height),
+      0.1F);
+    const auto rotation = glm::rotate(glm::mat4(1.0F),
+                                      static_cast<float>(glfwGetTime()),
+                                      glm::vec3(0.0F, 1.0F, 0.0F));
 
-    const auto mvp = projection * view;
-    const auto angle = static_cast<float>(glfwGetTime());
-    const auto rotation =
-      glm::rotate(glm::mat4(1.0F), angle, glm::vec3(0.0F, 1.0F, 0.0F));
-    pc.mvp = mvp * rotation;
+    pc.mvp = projection * view * rotation;
 
     buf.cmd_bind_graphics_pipeline(*cube_pipeline_handle);
     buf.cmd_bind_depth_state({

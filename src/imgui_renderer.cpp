@@ -58,7 +58,7 @@ ImGuiRenderer::ImGuiRenderer(IContext& ctx,
 #endif // LVK_WITH_IMPLOT
 
   ImGuiIO& io = ImGui::GetIO();
-  io.BackendRendererName = "imgui-lvk";
+  io.BackendRendererName = "imgui-vk-bindless";
   io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
 
   update_font(default_font_ttf, font_size);
@@ -66,24 +66,9 @@ ImGuiRenderer::ImGuiRenderer(IContext& ctx,
   sampler_clamp_to_edge = VkTextureSampler::create(
     *context,
     {
-      .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-      .pNext = nullptr,
-      .flags = {},
-      .magFilter = VK_FILTER_LINEAR,
-      .minFilter = VK_FILTER_LINEAR,
-      .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-      .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-      .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-      .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-      .mipLodBias = 0.0F,
-      .anisotropyEnable = VK_FALSE,
-      .maxAnisotropy = 0.0F,
-      .compareEnable = VK_FALSE,
-      .compareOp = VK_COMPARE_OP_ALWAYS,
-      .minLod = 0.0F,
-      .maxLod = 1.0F,
-      .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK,
-      .unnormalizedCoordinates = VK_FALSE,
+      .wrap_u = WrappingMode::ClampToEdge,
+      .wrap_v = WrappingMode::ClampToEdge,
+      .wrap_w = WrappingMode::ClampToEdge,
     });
 }
 
@@ -210,7 +195,7 @@ ImGuiRenderer::end_frame(ICommandBuffer& command_buffer)
         continue;
       struct VulkanImguiBindData
       {
-        float LRTB[4];
+        std::array<float,4> LRTB{};
         std::uint64_t vb = 0;
         std::uint32_t textureId = 0;
         std::uint32_t samplerId = 0;
@@ -230,7 +215,7 @@ ImGuiRenderer::end_frame(ICommandBuffer& command_buffer)
       command_buffer.cmd_draw_indexed(cmd.ElemCount,
                                       1u,
                                       index_offset + cmd.IdxOffset,
-                                      int32_t(vertex_offset + cmd.VtxOffset),
+                                      static_cast<int32_t>(vertex_offset + cmd.VtxOffset),
                                       0);
     }
     index_offset += command_list->IdxBuffer.Size;
@@ -238,11 +223,12 @@ ImGuiRenderer::end_frame(ICommandBuffer& command_buffer)
   }
 }
 auto
-ImGuiRenderer::update_font(std::string_view ttf_path, float font_size_pixels)
+ImGuiRenderer::update_font(const std::string_view ttf_path,
+                           const float font_size_pixels)
   -> void
 {
   auto& io = ImGui::GetIO();
-  ImFontConfig cfg = ImFontConfig();
+  ImFontConfig cfg {};
   cfg.FontDataOwnedByAtlas = false;
   cfg.RasterizerMultiply = 1.5f;
   cfg.SizePixels = std::ceilf(font_size_pixels);

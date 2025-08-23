@@ -1114,28 +1114,12 @@ Context::create_placeholder_resources() -> void
         .debug_name = "Dummy White Texture (1x1)",
       })
       .release();
-  dummy_sampler = VkTextureSampler::create(
-                    *this,
-                    VkSamplerCreateInfo{
-                      .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-                      .pNext = nullptr,
-                      .flags = {},
-                      .magFilter = VK_FILTER_LINEAR,
-                      .minFilter = VK_FILTER_LINEAR,
-                      .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-                      .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                      .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                      .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                      .mipLodBias = 0.0F,
-                      .anisotropyEnable = VK_FALSE,
-                      .maxAnisotropy = 0.0F,
-                      .compareEnable = VK_FALSE,
-                      .compareOp = VK_COMPARE_OP_ALWAYS,
-                      .minLod = 0.0F,
-                      .maxLod = 1.0F,
-                      .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK,
-                      .unnormalizedCoordinates = VK_FALSE,
-                    })
+  dummy_sampler = VkTextureSampler::create(*this,
+                                           {
+                                             .wrap_u = WrappingMode::Repeat,
+                                             .wrap_v = WrappingMode::Repeat,
+                                             .wrap_w = WrappingMode::Repeat,
+                                           })
                     .release();
 }
 
@@ -1334,10 +1318,10 @@ Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask)
     entries{};
 
   static constexpr auto get_pipeline_specialisation_info =
-    [](const SpecialisationConstantDescription& desc, auto& spec_entries) {
-      const auto num_entries = desc.get_specialisation_constants_count();
+    [](const SpecialisationConstantDescription& d, auto& spec_entries) {
+      const auto num_entries = d.get_specialisation_constants_count();
       for (auto i = 0U; i < num_entries; ++i) {
-        const auto& [constant_id, offset, size] = desc.entries.at(i);
+        const auto& [constant_id, offset, size] = d.entries.at(i);
         spec_entries[i] = VkSpecializationMapEntry{
           .constantID = constant_id,
           .offset = offset,
@@ -1348,8 +1332,8 @@ Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask)
       return VkSpecializationInfo{
         .mapEntryCount = num_entries,
         .pMapEntries = spec_entries.data(),
-        .dataSize = desc.data.size_bytes(),
-        .pData = desc.data.data(),
+        .dataSize = d.data.size_bytes(),
+        .pData = d.data.data(),
       };
     };
 

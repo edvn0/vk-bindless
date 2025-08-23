@@ -359,6 +359,11 @@ struct SpecialisationConstantDescription
     }
     return n;
   }
+
+  [[nodiscard]] auto at(std::unsigned_integral auto i) -> decltype(auto)
+  {
+    return entries.at(i);
+  }
 };
 
 struct Dependencies

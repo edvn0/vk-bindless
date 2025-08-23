@@ -60,7 +60,7 @@ VkTexture::create_internal_image(IContext& ctx,
                                     description.extent.height));
   }
 
-  AllocationCreateInfo alloc_info{
+  const AllocationCreateInfo alloc_info{
     .usage = MemoryUsage::AutoPreferDevice,
     .map_memory = false,
     .preferred_memory_bits = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -119,21 +119,24 @@ is_depth{ static_cast<bool>(description.usage_flags &
   view_info.subresourceRange.levelCount = mip_levels;
   view_info.subresourceRange.baseArrayLayer = 0;
   view_info.subresourceRange.layerCount = array_layers;
-  view_info.components.r = VK_COMPONENT_SWIZZLE_R;
-  view_info.components.g = VK_COMPONENT_SWIZZLE_G;
-  view_info.components.b = VK_COMPONENT_SWIZZLE_B;
-  view_info.components.a = VK_COMPONENT_SWIZZLE_A;
+  view_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+  view_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+  view_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+  view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
 
   VK_VERIFY(
     vkCreateImageView(ctx.get_device(), &view_info, nullptr, &image_view));
 
   mip_layer_views.resize(mip_levels * array_layers);
 
-  if (mip_layer_views.size() < 2) {
+  // Less than two views means just one view for the entire image
+  const auto has_only_one_view =
+    mip_levels == 1 && array_layers == 1;
+  if (has_only_one_view) {
     mip_layer_views.at(0) = image_view;
   } else {
-    for (std::uint32_t mip = 0; mip < mip_levels; ++mip) {
-      for (std::uint32_t layer = 0; layer < array_layers; ++layer) {
+    for (auto mip = 0U; mip < mip_levels; ++mip) {
+      for (auto layer = 0U; layer < array_layers; ++layer) {
         const auto index = mip * array_layers + layer;
         view_info.subresourceRange.baseMipLevel = mip;
         view_info.subresourceRange.baseArrayLayer = layer;
@@ -162,25 +165,113 @@ VkTexture::create(IContext& context, const VkTextureDescription& description)
     return Holder<TextureHandle>::invalid();
   }
 
+  context.needs_update() = true;
+
   return Holder{
     &context,
     std::move(handle),
   };
 }
 
+VkFilter
+filter_mode_to_vk_filter_mode(FilterMode filter_mode)
+{
+  switch (filter_mode) {
+    case FilterMode::Nearest:
+      return VK_FILTER_NEAREST;
+    case FilterMode::Linear:
+      return VK_FILTER_LINEAR;
+    default:
+      throw std::invalid_argument("Unsupported filter mode");
+  }
+}
+
+VkSamplerMipmapMode filter_mode_to_vk_mip_map_mode(
+  MipMapMode mip_map_mode)
+{
+  switch (mip_map_mode) {
+    case MipMapMode::Nearest:
+      return VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    case MipMapMode::Linear:
+      return VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    default:
+      throw std::invalid_argument("Unsupported mip map mode");
+  }
+}
+
+VkSamplerAddressMode
+address_mode_to_vk_address_mode(WrappingMode wrapping_mode)
+{
+  switch (wrapping_mode) {
+    case WrappingMode::Repeat:
+      return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    case WrappingMode::MirroredRepeat:
+      return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+    case WrappingMode::ClampToEdge:
+      return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    case WrappingMode::ClampToBorder:
+      return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    case WrappingMode::MirrorClampToEdge:
+      return VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
+    default:
+      throw std::invalid_argument("Unsupported wrapping mode");
+  }
+}
+VkBorderColor
+border_color_to_vk_border_color(BorderColor border_color)
+{
+  switch (border_color) {
+    case BorderColor::FloatTransparentBlack:
+      return VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+    case BorderColor::IntTransparentBlack:
+      return VK_BORDER_COLOR_INT_TRANSPARENT_BLACK;
+    case BorderColor::FloatOpaqueBlack:
+      return VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+    case BorderColor::IntOpaqueBlack:
+      return VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    case BorderColor::FloatOpaqueWhite:
+      return VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+    case BorderColor::IntOpaqueWhite:
+      return VK_BORDER_COLOR_INT_OPAQUE_WHITE;
+    default:
+      throw std::invalid_argument("Unsupported border color");
+  }
+}
 auto
-VkTextureSampler::create(IContext& context, const VkSamplerCreateInfo& info)
+VkTextureSampler::create(IContext& context, const SamplerDescription& info)
   -> Holder<SamplerHandle>
 {
   auto& pool = context.get_sampler_pool();
   VkSampler sampler{ VK_NULL_HANDLE };
-  VkSamplerCreateInfo sampler_info{ info };
-  sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-  sampler_info.pNext = nullptr;
+  const VkSamplerCreateInfo sampler_info{
+  .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+  .pNext = nullptr,
+  .flags = 0,
+  .magFilter = filter_mode_to_vk_filter_mode(info.mag_filter),
+  .minFilter = filter_mode_to_vk_filter_mode(info.min_filter),
+  .mipmapMode = filter_mode_to_vk_mip_map_mode(info.mipmap_mode),
+  .addressModeU = address_mode_to_vk_address_mode(info.wrap_u),
+  .addressModeV = address_mode_to_vk_address_mode(info.wrap_v),
+  .addressModeW = address_mode_to_vk_address_mode(info.wrap_w),
+  .mipLodBias = 0.0f,
+  .anisotropyEnable = false,
+  .maxAnisotropy = 1.0f,
+  .compareEnable = info.compare_op.has_value(),
+  .compareOp = info.compare_op.has_value()
+                 ? static_cast<VkCompareOp>(*info.compare_op)
+                 : VK_COMPARE_OP_NEVER,
+  .minLod = info.min_lod,
+  .maxLod = info.max_lod,
+  .borderColor = border_color_to_vk_border_color(info.border_color),
+  .unnormalizedCoordinates = false,
+  };
   VK_VERIFY(
     vkCreateSampler(context.get_device(), &sampler_info, nullptr, &sampler));
 
   auto handle = pool.create(std::move(sampler));
+
+  context.needs_update() = true;
+
   return Holder{
     &context,
     std::move(handle),
@@ -188,7 +279,7 @@ VkTextureSampler::create(IContext& context, const VkSamplerCreateInfo& info)
 }
 
 auto
-VkTexture::create_image_view(VkDevice device,
+VkTexture::create_image_view(const VkDevice device,
                              const VkImageViewCreateInfo& view_info) -> void
 {
   VkImageViewCreateInfo copy = view_info;
@@ -227,8 +318,8 @@ VkTexture::get_or_create_framebuffer_view(IContext& context,
     },
     .subresourceRange = {
       .aspectMask = is_depth
-                     ? (VkImageAspectFlags)VK_IMAGE_ASPECT_DEPTH_BIT
-                     : (VkImageAspectFlags)VK_IMAGE_ASPECT_COLOR_BIT,
+                     ? static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_DEPTH_BIT)
+                     : static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_COLOR_BIT),
       .baseMipLevel = mip,
       .levelCount = 1,
       .baseArrayLayer = layer,

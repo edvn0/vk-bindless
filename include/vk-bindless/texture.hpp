@@ -150,10 +150,51 @@ private:
   auto create_internal_image(IContext&, const VkTextureDescription&) -> void;
 };
 
+enum class WrappingMode : std::uint8_t
+{
+  Repeat = 0,
+  MirroredRepeat = 1,
+  ClampToEdge = 2,
+  ClampToBorder = 3,
+  MirrorClampToEdge = 4,
+};
+
+enum class FilterMode : std::uint8_t
+{
+  Nearest = 0,
+  Linear = 1,
+};
+
+enum class BorderColor : std::uint8_t
+{
+  FloatTransparentBlack = 0,
+  IntTransparentBlack = 1,
+  FloatOpaqueBlack = 2,
+  IntOpaqueBlack = 3,
+  FloatOpaqueWhite = 4,
+  IntOpaqueWhite = 5,
+};
+
+using MipMapMode = FilterMode;
+
+struct SamplerDescription
+{
+  WrappingMode wrap_u { WrappingMode::Repeat };
+  WrappingMode wrap_v { WrappingMode::Repeat };
+  WrappingMode wrap_w { WrappingMode::Repeat };
+  FilterMode min_filter { FilterMode::Linear };
+  FilterMode mag_filter { FilterMode::Linear };
+  MipMapMode mipmap_mode { MipMapMode::Linear };
+  float min_lod { 0.0f };
+  float max_lod { 1.0f };
+  BorderColor border_color { BorderColor::FloatOpaqueBlack };
+  std::optional<CompareOp> compare_op { std::nullopt };
+};
+
 class VkTextureSampler
 {
 public:
-  static auto create(IContext&, const VkSamplerCreateInfo&)
+  static auto create(IContext&, const SamplerDescription&)
     -> Holder<SamplerHandle>;
 };
 

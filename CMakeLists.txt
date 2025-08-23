@@ -58,6 +58,7 @@ add_library(${PROJECT_NAME}
     src/event_system.cpp
     src/imgui_renderer.cpp
     src/buffer.cpp
+    src/camera.cpp
 )
 target_include_directories(${PROJECT_NAME}
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include

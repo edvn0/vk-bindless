@@ -181,6 +181,13 @@ public:
     std::sort(std::begin(handler_list), std::end(handler_list));
   }
 
+  template<typename... EventTypes> requires(sizeof...(EventTypes) >1)
+  auto subscribe(const std::shared_ptr<IEventHandler>& handler)
+    -> void
+  {
+        (subscribe<EventTypes>(handler), ...);
+  }
+
   template<typename EventType>
   auto unsubscribe(std::shared_ptr<IEventHandler> handler) -> void
   {
