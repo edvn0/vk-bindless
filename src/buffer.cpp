@@ -35,15 +35,17 @@ auto
 VkDataBuffer::create(IContext& context, const BufferDescription& desc)
   -> Holder<BufferHandle>
 {
-  BufferDescription description = desc;
+  auto storage = desc.storage;
   if (!context.use_staging() &&
-      (description.storage == StorageType::DeviceLocal)) {
-    description.storage = StorageType::HostVisible;
+      (desc.storage == StorageType::DeviceLocal)) {
+    storage = StorageType::HostVisible;
   }
   VkBufferUsageFlags usage_flags =
-    desc.storage == StorageType::DeviceLocal
+    storage == StorageType::DeviceLocal
       ? VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT
       : 0;
+
+  assert(desc.usage != BufferUsageFlags{ 0 });
 
   if ((desc.usage & BufferUsageFlags::IndexBuffer) != BufferUsageFlags{ 0 })
     usage_flags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
@@ -61,10 +63,10 @@ VkDataBuffer::create(IContext& context, const BufferDescription& desc)
                    VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
   auto memory_flags =
-    storage_type_to_vk_memory_property_flags(description.storage);
+    storage_type_to_vk_memory_property_flags(storage);
 
   VkDataBuffer buffer{};
-  buffer.size = description.size;
+  buffer.size = desc.size;
   buffer.usage_flags = usage_flags;
   buffer.memory_flags = memory_flags;
 
@@ -73,7 +75,7 @@ VkDataBuffer::create(IContext& context, const BufferDescription& desc)
     .map_memory = true,
     .preferred_memory_bits = 0,
     .required_memory_bits = 0,
-    .debug_name = std::string{ description.debug_name },
+    .debug_name = std::string{ desc.debug_name },
   };
   if (memory_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
     allocation_create_info.map_memory = true;
@@ -86,7 +88,7 @@ VkDataBuffer::create(IContext& context, const BufferDescription& desc)
     .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
     .pNext = nullptr,
     .flags = 0,
-    .size = description.size,
+    .size = desc.size,
     .usage = usage_flags,
     .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     .queueFamilyIndexCount = 0,
@@ -98,8 +100,8 @@ VkDataBuffer::create(IContext& context, const BufferDescription& desc)
 
   buffer.buffer = buf;
   buffer.allocation = allocation;
-  if (!description.data.empty()) {
-    buffer.upload(description.data);
+  if (!desc.data.empty()) {
+    buffer.upload(desc.data);
   }
 
   return Holder<BufferHandle>{

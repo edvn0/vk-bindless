@@ -66,7 +66,7 @@ struct IContext
   virtual auto flush_mapped_memory(BufferHandle handle,
                                    std::uint64_t offset,
                                    std::uint64_t size) -> void = 0;
-  virtual auto use_staging() const -> bool = 0;
+  [[nodiscard]] virtual auto use_staging() const -> bool = 0;
 
   virtual auto get_swapchain() -> Swapchain& = 0;
   virtual auto resize_swapchain(std::uint32_t width, std::uint32_t height)
@@ -94,11 +94,13 @@ struct IContext
   virtual auto get_buffer_pool() -> BufferPool& = 0;
 
   virtual auto acquire_command_buffer() -> ICommandBuffer& = 0;
+  virtual auto acquire_immediate_command_buffer() -> CommandBufferWrapper& = 0;
   virtual auto submit(ICommandBuffer&, TextureHandle present)
     -> Expected<SubmitHandle, std::string> = 0;
   virtual auto get_current_swapchain_texture() -> TextureHandle = 0;
+  virtual void wait_for(SubmitHandle value) = 0;
 
-  auto get_format(TextureHandle handle) -> Format;
+    auto get_format(TextureHandle handle) -> Format;
 };
 
 } // namespace VkBindless

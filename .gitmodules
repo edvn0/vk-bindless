@@ -22,3 +22,9 @@
 [submodule "third-party/imgui"]
 	path = third-party/imgui
 	url = git@github.com:ocornut/imgui.git
+[submodule "third-party/implot"]
+	path = third-party/implot
+	url = git@github.com:epezent/implot.git
+[submodule "third-party/ImGuizmo"]
+	path = third-party/ImGuizmo
+	url = git@github.com:CedricGuillemet/ImGuizmo.git

@@ -190,7 +190,8 @@ const uint uv_mapping[36] = uint[](
 
 layout(push_constant) uniform PushConstants
 {
-  mat4 mvp_matrix;
+  mat4 vp_matrix;
+  mat4 m_matrix;
 vec4 light_direction;
 }
 pc;
@@ -214,7 +215,7 @@ main()
   vec3 bitangent = face_bitangents[face_index];
 
   // Transform TBN to world space (assuming model matrix is part of MVP)
-  mat3 normal_matrix = mat3(transpose(inverse(pc.mvp_matrix)));
+  mat3 normal_matrix = mat3(transpose(inverse(pc.m_matrix)));
   frag_normal = normalize(normal_matrix * normal);
   frag_tangent = normalize(normal_matrix * tangent);
   frag_bitangent = normalize(normal_matrix * bitangent);
@@ -230,7 +231,7 @@ main()
   );
   frag_color = face_colors[face_index];
 
-  gl_Position = pc.mvp_matrix * vec4(position, 1.0);
+  gl_Position = pc.vp_matrix *pc.m_matrix * vec4(position, 1.0);
 }
 
 #pragma stage : fragment
@@ -244,7 +245,8 @@ layout(location = 0) out vec4 out_color;
 
 layout(push_constant) uniform PushConstants
 {
-  mat4 mvp_matrix; // 64
+  mat4 vp_matrix; // 64
+  mat4 model_matrix; // 64
   vec4 light_direction; // 16
 }
 pc;
@@ -257,7 +259,7 @@ main()
 
   float ndotl = max(dot(frag_normal, vec3(pc.light_direction)), 0.0);
 
-    //vec4 texture_color = textureBindless2D(0, 0, frag_uv);
-vec4 texture_color = vec4(1.0, 1.0, 1.0, 1.0); // Placeholder for texture
-  out_color = vec4(frag_color.rgb*texture_color.rgb, 1.0);
+  vec4 texture_color = textureBindless2D(0, 0, frag_uv);
+  vec4 diffuse = vec4(frag_color, 1.0) * texture_color;
+  out_color = vec4(ndotl*diffuse.rgb, texture_color.a);
 }

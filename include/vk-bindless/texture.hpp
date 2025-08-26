@@ -65,6 +65,10 @@ struct VkTextureDescription
   VkSampleCountFlagBits sample_count{ VK_SAMPLE_COUNT_1_BIT };
   VkImageTiling tiling{ VK_IMAGE_TILING_OPTIMAL };
   VkImageLayout initial_layout{ VK_IMAGE_LAYOUT_UNDEFINED };
+  std::optional<VkImageLayout> final_layout{
+    std::nullopt
+  }; // If not set, it will be VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL if
+     // sampled, VK_IMAGE_LAYOUT_GENERAL if storage, else VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
   bool is_owning{ true };
   bool is_swapchain{ false };
 
@@ -121,6 +125,10 @@ public:
   auto create_image_view(VkDevice, const VkImageViewCreateInfo&) -> void;
 
   [[nodiscard]] auto get_format() const -> Format { return format; }
+  [[nodiscard]] auto is_swapchain_texture() const -> bool
+  {
+    return is_swapchain;
+  }
 
 private:
   VkImageView image_view{ VK_NULL_HANDLE };

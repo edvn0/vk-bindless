@@ -8,8 +8,10 @@
 #include "vk-bindless/vulkan_context.hpp"
 
 #define GLFW_INCLUDE_VULKAN
+#include "backends/imgui_impl_glfw.h"
 #include "glm/ext/matrix_clip_space.hpp"
 #include "glm/ext/matrix_transform.hpp"
+#include "implot.h"
 #include "vk-bindless/camera.hpp"
 #include "vk-bindless/imgui_renderer.hpp"
 
@@ -288,6 +290,9 @@ setup_event_callbacks(GLFWwindow* window, EventSystem::EventDispatcher* d)
       auto* dispatcher = static_cast<EventSystem::EventDispatcher*>(
         glfwGetWindowUserPointer(win));
       dispatcher->handle_key_callback(win, key, scancode, action, mods);
+
+      auto & io = ImGui::GetIO();
+        io.AddKeyEvent(static_cast<ImGuiKey>(key), action != GLFW_RELEASE);
     });
 
   glfwSetMouseButtonCallback(
@@ -303,9 +308,8 @@ setup_event_callbacks(GLFWwindow* window, EventSystem::EventDispatcher* d)
           ? ImGuiMouseButton_Left
           : (button == GLFW_MOUSE_BUTTON_RIGHT ? ImGuiMouseButton_Right
                                                : ImGuiMouseButton_Middle);
-      ImGuiIO& io = ImGui::GetIO();
-      io.MousePos = ImVec2(static_cast<float>(xpos), static_cast<float>(ypos));
-      io.MouseDown[imgui_button] = action == GLFW_PRESS;
+      auto& io = ImGui::GetIO();
+      io.AddMouseButtonEvent(imgui_button, action != GLFW_RELEASE);
     });
 
   glfwSetCursorPosCallback(window, [](GLFWwindow* win, double x, double y) {
@@ -313,14 +317,29 @@ setup_event_callbacks(GLFWwindow* window, EventSystem::EventDispatcher* d)
       static_cast<EventSystem::EventDispatcher*>(glfwGetWindowUserPointer(win));
     dispatcher->handle_cursor_pos_callback(win, x, y);
 
-    ImGui::GetIO().MousePos =
-      ImVec2(static_cast<float>(x), static_cast<float>(y));
+    ImGui::GetIO().AddMousePosEvent(static_cast<float>(x), static_cast<float>(y));
+  });
+
+  glfwSetScrollCallback(window, [](GLFWwindow*, double xoffset, double yoffset) {
+    //auto* dispatcher =
+    //  static_cast<EventSystem::EventDispatcher*>(glfwGetWindowUserPointer(win));
+    //dispatcher->handle_scroll_callback(win, xoffset, yoffset);
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.AddMouseWheelEvent(static_cast<float>(xoffset),
+                          static_cast<float>(yoffset));
   });
 
   glfwSetWindowSizeCallback(window, [](GLFWwindow* win, int width, int height) {
     auto* dispatcher =
       static_cast<EventSystem::EventDispatcher*>(glfwGetWindowUserPointer(win));
     dispatcher->handle_window_size_callback(win, width, height);
+
+    auto& io = ImGui::GetIO();
+        io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
+    float xscale, yscale;
+  glfwGetWindowContentScale(win, &xscale, &yscale);
+      io.DisplayFramebufferScale = ImVec2(xscale, yscale);
   });
 }
 
@@ -514,8 +533,8 @@ main() -> std::int32_t
 
     ImGui::Begin("Texture Viewer", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
     ImGui::Image(framebuffer.color.at(0).texture.index(), ImVec2(512, 512));
-    float rad_phi{};
-    float rad_theta{};
+    static float rad_phi{};
+    static float rad_theta{};
     ImGui::SliderAngle("Light Direction (phi, theta)",
                        &rad_phi,
                        0.0F,
@@ -529,23 +548,24 @@ main() -> std::int32_t
                        "%.1f",
                        ImGuiSliderFlags_AlwaysClamp);
     ImGui::ShowDemoWindow();
+    ImPlot::ShowDemoWindow();
     ImGui::End();
 
     struct PC
     {
-      glm::mat4 mvp{ 1.0F };
+      glm::mat4 vp{ 1.0F };
+      glm::mat4 model{ 1.0F };
       glm::vec4 light_direction{ 0.0F };
     } pc{};
     // angles in radians
     // spherical → Cartesian
     glm::vec3 dir;
-    dir.x = std::cos(rad_phi) * std::cos(rad_theta);
-    dir.y = std::sin(rad_phi);
-    dir.z = std::cos(rad_phi) * std::sin(rad_theta);
+    dir.x = glm::cos(rad_phi) * glm::cos(rad_theta);
+    dir.y = glm::sin(rad_phi);
+    dir.z = glm::cos(rad_phi) * glm::sin(rad_theta);
 
     // normalize for safety
-    dir = glm::normalize(dir);
-
+    dir = -glm::normalize(dir);
     // store in push constants
     pc.light_direction = glm::vec4(dir, 0.0f); // w=0 for a direction
     const auto view = camera.get_view_matrix();
@@ -557,7 +577,8 @@ main() -> std::int32_t
                                       static_cast<float>(glfwGetTime()),
                                       glm::vec3(0.0F, 1.0F, 0.0F));
 
-    pc.mvp = projection * view * rotation;
+    pc.vp = projection * view;
+    pc.model = rotation;
 
     buf.cmd_bind_graphics_pipeline(*cube_pipeline_handle);
     buf.cmd_bind_depth_state({

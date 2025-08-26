@@ -102,6 +102,7 @@ public:
   auto get_buffer_pool() -> BufferPool& override { return buffer_pool; }
 
   auto acquire_command_buffer() -> ICommandBuffer& override;
+  auto acquire_immediate_command_buffer() -> CommandBufferWrapper& override;
   auto submit(ICommandBuffer& cmd_buffer, TextureHandle present)
     -> Expected<SubmitHandle, std::string> override;
   auto get_current_swapchain_texture() -> TextureHandle override;
@@ -111,8 +112,11 @@ public:
   auto flush_mapped_memory(BufferHandle,
                            std::uint64_t offset,
                            std::uint64_t size) -> void override;
-  auto use_staging() const -> bool override { return use_staging_system; }
-
+  [[nodiscard]] auto use_staging() const -> bool override { return use_staging_system; }
+        auto wait_for(const SubmitHandle value) -> void override
+  {
+    immediate_commands->wait(value);
+  }
   [[nodiscard]] auto get_immediate_commands() const -> auto&
   {
     return *immediate_commands;
@@ -143,7 +147,7 @@ private:
   VkSurfaceKHR surface{};
   Unique<Swapchain> swapchain{};
   VkSemaphore timeline_semaphore{ VK_NULL_HANDLE };
-  bool use_staging_system{ false };
+  bool use_staging_system{ true };
 
   VkQueue graphics_queue{};
   VkQueue compute_queue{};

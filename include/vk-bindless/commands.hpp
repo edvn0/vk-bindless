@@ -14,14 +14,14 @@ struct SubmitHandle
   std::uint32_t submit_identifier{ 0 };
 
   SubmitHandle() = default;
-  explicit SubmitHandle(std::uint64_t handle)
-    : buffer_index(std::uint32_t(handle & 0xffffffff))
-    , submit_identifier(std::uint32_t(handle >> 32))
+  explicit SubmitHandle(const std::uint64_t handle)
+    : buffer_index(static_cast<std::uint32_t>(handle & 0xffffffff))
+    , submit_identifier(static_cast<std::uint32_t>(handle >> 32))
   {
   }
 
-  auto empty() const { return submit_identifier == 0; }
-  auto handle() const
+  [[nodiscard]] auto empty() const { return submit_identifier == 0; }
+  [[nodiscard]] auto handle() const
   {
     return (static_cast<std::uint64_t>(submit_identifier) << 32) + buffer_index;
   }
@@ -53,11 +53,11 @@ public:
   auto signal_semaphore(VkSemaphore, std::uint64_t) -> void;
   auto acquire_last_submit_semaphore() -> VkSemaphore;
 
-  auto get_last_submit_handle() const -> SubmitHandle
+  [[nodiscard]] auto get_last_submit_handle() const -> SubmitHandle
   {
     return last_submit_handle;
   }
-  auto is_ready(SubmitHandle) const -> bool;
+  [[nodiscard]] auto is_ready(SubmitHandle) const -> bool;
   auto wait(SubmitHandle) -> void;
   auto wait_all() -> void;
 

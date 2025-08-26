@@ -84,7 +84,8 @@ ImmediateCommands::~ImmediateCommands() {
   vkDestroyCommandPool(device, command_pool, nullptr);
 }
 
-auto ImmediateCommands::acquire() -> CommandBufferWrapper & {
+auto ImmediateCommands::acquire() -> CommandBufferWrapper &
+{
   while (!available_command_buffers)
     purge();
 
@@ -95,12 +96,17 @@ auto ImmediateCommands::acquire() -> CommandBufferWrapper & {
       break;
     }
   }
+
+  if (!current) {
+    throw std::runtime_error("No available command buffers");
+  }
+
   current->handle.submit_identifier = submit_counter;
   available_command_buffers--;
   current->command_buffer = current->command_buffer_allocated;
   current->is_encoding = true;
 
-  const VkCommandBufferBeginInfo begin_info{
+  constexpr VkCommandBufferBeginInfo begin_info{
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
       .pNext = nullptr,
       .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,

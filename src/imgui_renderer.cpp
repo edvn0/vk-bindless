@@ -6,6 +6,13 @@
 #include "vk-bindless/swapchain.hpp"
 
 #include <imgui.h>
+#if defined(WITH_IMPLOT)
+#include <implot.h>
+#endif
+
+#if defined(WITH_IMGUIZMO)
+#include <ImGuizmo.h>
+#endif
 
 namespace VkBindless {
 
@@ -48,14 +55,14 @@ ImGuiRenderer::create_pipeline(const Framebuffer& fb) const
 }
 
 ImGuiRenderer::ImGuiRenderer(IContext& ctx,
-                             std::string_view default_font_ttf,
-                             float font_size)
+                             const std::string_view default_font_ttf,
+                             const float font_size)
   : context(&ctx)
 {
   ImGui::CreateContext();
-#if defined(LVK_WITH_IMPLOT)
+#if defined(WITH_IMPLOT)
   ImPlot::CreateContext();
-#endif // LVK_WITH_IMPLOT
+#endif
 
   ImGuiIO& io = ImGui::GetIO();
   io.BackendRendererName = "imgui-vk-bindless";
@@ -63,22 +70,22 @@ ImGuiRenderer::ImGuiRenderer(IContext& ctx,
 
   update_font(default_font_ttf, font_size);
   gui_shader = VkShader::create(context, "assets/shaders/gui.shader");
-  sampler_clamp_to_edge = VkTextureSampler::create(
-    *context,
-    {
-      .wrap_u = WrappingMode::ClampToEdge,
-      .wrap_v = WrappingMode::ClampToEdge,
-      .wrap_w = WrappingMode::ClampToEdge,
-    });
+  sampler_clamp_to_edge =
+    VkTextureSampler::create(*context,
+                             {
+                               .wrap_u = WrappingMode::ClampToEdge,
+                               .wrap_v = WrappingMode::ClampToEdge,
+                               .wrap_w = WrappingMode::ClampToEdge,
+                             });
 }
 
 ImGuiRenderer::~ImGuiRenderer()
 {
-  ImGuiIO& io = ImGui::GetIO();
+  const auto& io = ImGui::GetIO();
   io.Fonts->TexID = nullptr;
-#if defined(LVK_WITH_IMPLOT)
+#if defined(WITH_IMPLOT)
   ImPlot::DestroyContext();
-#endif // LVK_WITH_IMPLOT
+#endif
   ImGui::DestroyContext();
 }
 
@@ -88,13 +95,16 @@ ImGuiRenderer::begin_frame(const Framebuffer& desc) -> void
   const auto dim = context->get_dimensions(desc.color.at(0).texture);
   ImGuiIO& io = ImGui::GetIO();
   io.DisplaySize =
-    ImVec2(dim.width / display_scale, dim.height / display_scale);
+    ImVec2(static_cast<float>(dim.width) / display_scale, static_cast<float>(dim.height) / display_scale);
   io.DisplayFramebufferScale = ImVec2(display_scale, display_scale);
   io.IniFilename = nullptr;
   if (graphics_pipeline.empty()) {
     graphics_pipeline = create_pipeline(desc);
   }
   ImGui::NewFrame();
+#if defined(WITH_IMGUIZMO)
+  ImGuizmo::BeginFrame();
+#endif
 }
 
 void
@@ -195,7 +205,7 @@ ImGuiRenderer::end_frame(ICommandBuffer& command_buffer)
         continue;
       struct VulkanImguiBindData
       {
-        std::array<float,4> LRTB{};
+        std::array<float, 4> LRTB{};
         std::uint64_t vb = 0;
         std::uint32_t textureId = 0;
         std::uint32_t samplerId = 0;
@@ -212,11 +222,12 @@ ImGuiRenderer::end_frame(ICommandBuffer& command_buffer)
         static_cast<uint32_t>(clip_max.x - clip_min.x),
         static_cast<uint32_t>(clip_max.y - clip_min.y),
       });
-      command_buffer.cmd_draw_indexed(cmd.ElemCount,
-                                      1u,
-                                      index_offset + cmd.IdxOffset,
-                                      static_cast<int32_t>(vertex_offset + cmd.VtxOffset),
-                                      0);
+      command_buffer.cmd_draw_indexed(
+        cmd.ElemCount,
+        1u,
+        index_offset + cmd.IdxOffset,
+        static_cast<int32_t>(vertex_offset + cmd.VtxOffset),
+        0);
     }
     index_offset += command_list->IdxBuffer.Size;
     vertex_offset += command_list->VtxBuffer.Size;
@@ -224,11 +235,10 @@ ImGuiRenderer::end_frame(ICommandBuffer& command_buffer)
 }
 auto
 ImGuiRenderer::update_font(const std::string_view ttf_path,
-                           const float font_size_pixels)
-  -> void
+                           const float font_size_pixels) -> void
 {
   auto& io = ImGui::GetIO();
-  ImFontConfig cfg {};
+  ImFontConfig cfg{};
   cfg.FontDataOwnedByAtlas = false;
   cfg.RasterizerMultiply = 1.5f;
   cfg.SizePixels = std::ceilf(font_size_pixels);

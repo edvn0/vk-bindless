@@ -847,7 +847,7 @@ Context::update_resource_bindings()
     const auto is_storage = object.is_storage() && is_available;
 
     imgs.emplace_back(
-      VK_NULL_HANDLE, is_sampled ? view : v, VK_IMAGE_LAYOUT_GENERAL);
+      VK_NULL_HANDLE, is_sampled ? view : v, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     storgs.emplace_back(
       VK_NULL_HANDLE, is_storage ? storage_view : v, VK_IMAGE_LAYOUT_GENERAL);
@@ -1146,6 +1146,12 @@ Context::acquire_command_buffer() -> ICommandBuffer&
   command_buffer = CommandBuffer(*this);
   return command_buffer;
 }
+
+auto Context::acquire_immediate_command_buffer() -> CommandBufferWrapper&
+{
+  return immediate_commands->acquire();
+}
+
 
 auto
 Context::submit(ICommandBuffer& cmd_buffer, const TextureHandle present)

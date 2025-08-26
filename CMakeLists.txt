@@ -88,6 +88,16 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_LEFT_HANDED)
 
+if (TARGET implot::implot)
+    target_link_libraries(${PROJECT_NAME} PUBLIC implot::implot)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE WITH_IMPLOT)
+endif()
+
+if (TARGET imguizmo::imguizmo)
+    target_link_libraries(${PROJECT_NAME} PUBLIC imguizmo::imguizmo)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE WITH_IMGUIZMO)
+endif()
+
 if (HAS_STD_EXPECTED)
     target_compile_definitions(${PROJECT_NAME} PUBLIC HAS_STD_EXPECTED)
 else ()
