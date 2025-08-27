@@ -59,6 +59,7 @@ add_library(${PROJECT_NAME}
     src/imgui_renderer.cpp
     src/buffer.cpp
     src/camera.cpp
+    src/mesh.cpp
 )
 target_include_directories(${PROJECT_NAME}
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -84,6 +85,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         PUBLIC
         glm::glm
         imgui::imgui
+        meshoptimizer::meshoptimizer
+        assimp::assimp
 )
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_LEFT_HANDED)

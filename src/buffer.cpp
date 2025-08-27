@@ -35,9 +35,13 @@ auto
 VkDataBuffer::create(IContext& context, const BufferDescription& desc)
   -> Holder<BufferHandle>
 {
+  if (!desc.data.empty() && desc.size != desc.data.size_bytes()) {
+    throw std::runtime_error(
+      "BufferDescription size must match data size when data is provided");
+  }
+
   auto storage = desc.storage;
-  if (!context.use_staging() &&
-      (desc.storage == StorageType::DeviceLocal)) {
+  if (!context.use_staging() && (desc.storage == StorageType::DeviceLocal)) {
     storage = StorageType::HostVisible;
   }
   VkBufferUsageFlags usage_flags =
@@ -62,8 +66,7 @@ VkDataBuffer::create(IContext& context, const BufferDescription& desc)
     usage_flags |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
                    VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
-  auto memory_flags =
-    storage_type_to_vk_memory_property_flags(storage);
+  auto memory_flags = storage_type_to_vk_memory_property_flags(storage);
 
   VkDataBuffer buffer{};
   buffer.size = desc.size;

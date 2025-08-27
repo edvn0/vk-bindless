@@ -74,6 +74,7 @@ private:
 
   auto create_swapchain_impl(std::uint32_t, std::uint32_t, VkSwapchainKHR)
     -> void;
+  auto wait_for_pending_timeline_operations() -> void;
 
   friend class Context;
 };

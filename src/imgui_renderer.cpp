@@ -94,8 +94,8 @@ ImGuiRenderer::begin_frame(const Framebuffer& desc) -> void
 {
   const auto dim = context->get_dimensions(desc.color.at(0).texture);
   ImGuiIO& io = ImGui::GetIO();
-  io.DisplaySize =
-    ImVec2(static_cast<float>(dim.width) / display_scale, static_cast<float>(dim.height) / display_scale);
+  io.DisplaySize = ImVec2(static_cast<float>(dim.width) / display_scale,
+                          static_cast<float>(dim.height) / display_scale);
   io.DisplayFramebufferScale = ImVec2(display_scale, display_scale);
   io.IniFilename = nullptr;
   if (graphics_pipeline.empty()) {
@@ -181,8 +181,8 @@ ImGuiRenderer::end_frame(ICommandBuffer& command_buffer)
 
   std::uint32_t index_offset = 0;
   std::uint32_t vertex_offset = 0;
-  command_buffer.cmd_bind_index_buffer(*drawable.index_buffer,
-                                       IndexFormat::UI16);
+  command_buffer.cmd_bind_index_buffer(
+    *drawable.index_buffer, IndexFormat::UI16, 0);
   command_buffer.cmd_bind_graphics_pipeline(*graphics_pipeline);
   for (std::int32_t n = 0; n < dd->CmdListsCount; n++) {
     const auto* command_list = dd->CmdLists[n];

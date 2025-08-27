@@ -1,5 +1,5 @@
 project(vk_bindless_client CXX)
-add_executable(vk_bindless_client main.cpp)
+add_executable(vk_bindless_client main.cpp helper.cpp)
 target_link_libraries(vk_bindless_client VkBindless::VkBindless glfw)
 
 if (MSVC)

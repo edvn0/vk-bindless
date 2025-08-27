@@ -440,6 +440,8 @@ Swapchain::resize(std::uint32_t new_width, std::uint32_t new_height) -> void
     return;
   }
 
+  wait_for_pending_timeline_operations();
+
   vkDeviceWaitIdle(context_ref.get_device());
 
   for (TextureHandle handle : swapchain_textures) {
@@ -473,6 +475,56 @@ Swapchain::resize(std::uint32_t new_width, std::uint32_t new_height) -> void
   frame_index = 0;
 
   create_swapchain_impl(new_width, new_height, old_swapchain);
+}
+
+auto
+Swapchain::wait_for_pending_timeline_operations() -> void
+{
+  // Find the highest timeline value we're waiting for
+  std::uint64_t max_wait_value = 0;
+  bool has_pending = false;
+
+  for (size_t i = 0; i < swapchain_image_count(); ++i) {
+    if (timeline_wait_values[i] > 0) {
+      max_wait_value = std::max(max_wait_value, timeline_wait_values[i]);
+      has_pending = true;
+    }
+  }
+
+  if (has_pending && max_wait_value > 0) {
+    // Get current timeline value to see if we actually need to wait
+    std::uint64_t current_value = 0;
+
+    if (vkGetSemaphoreCounterValue(context_ref.get_device(),
+                                   context_ref.timeline_semaphore,
+                                   &current_value) == VK_SUCCESS) {
+      if (current_value < max_wait_value) {
+        // We need to wait for pending operations
+        VkSemaphoreWaitInfo wait_info = {
+          .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+          .pNext = nullptr,
+          .flags = 0,
+          .semaphoreCount = 1,
+          .pSemaphores = &context_ref.timeline_semaphore,
+          .pValues = &max_wait_value
+        };
+
+        // Wait with a reasonable timeout (e.g., 1 second)
+        VkResult result =
+          vkWaitSemaphores(context_ref.get_device(),
+                           &wait_info,
+                           1000000000ULL); // 1 second in nanoseconds
+
+        if (result == VK_TIMEOUT) {
+          // Log warning but continue - might be a driver issue
+          // In debug builds you might want to assert here
+        }
+      }
+    }
+  }
+
+  // Clear all timeline wait values
+  std::fill(timeline_wait_values.begin(), timeline_wait_values.end(), 0);
 }
 
 auto

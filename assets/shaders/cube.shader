@@ -6,8 +6,6 @@ layout(location = 2) out vec3 frag_tangent;
 layout(location = 3) out vec3 frag_bitangent;
 layout(location = 4) out vec2 frag_uv;
 
-
-
 // Static cube vertices (8 vertices)
 const vec3 cube_vertices[8] = vec3[](vec3(-0.5, -0.5, -0.5), // 0
                                      vec3(0.5, -0.5, -0.5),  // 1
@@ -188,13 +186,20 @@ const uint uv_mapping[36] = uint[](
   3,
   0);
 
+layout(std430, buffer_reference) readonly buffer UBO
+{
+  mat4 model;
+  mat4 view;
+  mat4 proj;
+  vec4 camera_position;
+  vec4 light_direction;
+  uint texture;
+  uint cube_texture;
+};
 layout(push_constant) uniform PushConstants
 {
-  mat4 vp_matrix;
-  mat4 m_matrix;
-vec4 light_direction;
-}
-pc;
+  UBO pc;
+};
 
 void
 main()
@@ -215,7 +220,7 @@ main()
   vec3 bitangent = face_bitangents[face_index];
 
   // Transform TBN to world space (assuming model matrix is part of MVP)
-  mat3 normal_matrix = mat3(transpose(inverse(pc.m_matrix)));
+  mat3 normal_matrix = mat3(transpose(inverse(pc.model)));
   frag_normal = normalize(normal_matrix * normal);
   frag_tangent = normalize(normal_matrix * tangent);
   frag_bitangent = normalize(normal_matrix * bitangent);
@@ -231,7 +236,7 @@ main()
   );
   frag_color = face_colors[face_index];
 
-  gl_Position = pc.vp_matrix *pc.m_matrix * vec4(position, 1.0);
+  gl_Position = pc.proj * pc.view * pc.model * vec4(position, 1.0);
 }
 
 #pragma stage : fragment
@@ -243,13 +248,20 @@ layout(location = 3) in vec3 frag_bitangent;
 layout(location = 4) in vec2 frag_uv;
 layout(location = 0) out vec4 out_color;
 
+layout(std430, buffer_reference) readonly buffer UBO
+{
+  mat4 model;
+  mat4 view;
+  mat4 proj;
+  vec4 camera_position;
+  vec4 light_direction;
+  uint texture;
+  uint cube_texture;
+};
 layout(push_constant) uniform PushConstants
 {
-  mat4 vp_matrix; // 64
-  mat4 model_matrix; // 64
-  vec4 light_direction; // 16
-}
-pc;
+  UBO pc;
+};
 
 void
 main()
@@ -259,7 +271,7 @@ main()
 
   float ndotl = max(dot(frag_normal, vec3(pc.light_direction)), 0.0);
 
-  vec4 texture_color = textureBindless2D(0, 0, frag_uv);
+  vec4 texture_color = textureBindless2D(pc.texture, 0, frag_uv);
   vec4 diffuse = vec4(frag_color, 1.0) * texture_color;
-  out_color = vec4(ndotl*diffuse.rgb, texture_color.a);
+  out_color = vec4(ndotl * diffuse.rgb, texture_color.a);
 }

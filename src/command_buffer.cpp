@@ -327,7 +327,7 @@ CommandBuffer::cmd_begin_rendering(const RenderPass& render_pass,
 
   const VkViewport vp = {
     .x = viewport.x,
-    .y = viewport.height - viewport.y,
+    .y = viewport.height,
     .width = viewport.width,
     .height = -viewport.height,
     .minDepth = viewport.minDepth,
@@ -359,7 +359,7 @@ CommandBuffer::cmd_bind_viewport(const Viewport& viewport) -> void
   assert(is_rendering && "Viewport can only be bound during rendering");
   const VkViewport vp = {
     .x = viewport.x,
-    .y = viewport.height - viewport.y,
+    .y = viewport.height,
     .width = viewport.width,
     .height = -viewport.height,
     .minDepth = viewport.minDepth,
@@ -533,6 +533,23 @@ CommandBuffer::cmd_bind_index_buffer(BufferHandle index_buffer,
                        buffer->get_buffer(),
                        index_buffer_offset,
                        static_cast<VkIndexType>(index_format));
+}
+
+void
+CommandBuffer::cmd_bind_vertex_buffer(std::uint32_t index,
+                                      BufferHandle vertex_buffer,
+                                      uint64_t buffer_offset)
+{
+  const auto* buffer = *context->get_buffer_pool().get(vertex_buffer);
+
+  const std::array buffers{ buffer->get_buffer() };
+  vkCmdBindVertexBuffers2(wrapper->command_buffer,
+                          index,
+                          static_cast<std::uint32_t>(buffers.size()),
+                          buffers.data(),
+                          &buffer_offset,
+                          nullptr,
+                          nullptr);
 }
 
 } // namespace vk_bindless

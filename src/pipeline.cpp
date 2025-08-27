@@ -196,7 +196,6 @@ VkGraphicsPipeline::get_stage_flags() const -> VkShaderStageFlags
   return stage_flags;
 }
 
-
 auto
 VkGraphicsPipeline::create(IContext* context,
                            const GraphicsPipelineDescription& desc)
@@ -253,9 +252,11 @@ VkGraphicsPipeline::create(IContext* context,
   }
 
   pipeline.stage_flags = context->get_shader_module_pool()
-    .get(desc.shader).transform([](const auto* shader) {
-      return shader->get_shader_stage_flags();
-    }).value_or(VK_SHADER_STAGE_ALL_GRAPHICS);
+                           .get(desc.shader)
+                           .transform([](const auto* shader) {
+                             return shader->get_shader_stage_flags();
+                           })
+                           .value_or(VK_SHADER_STAGE_ALL_GRAPHICS);
 
   return Holder{
     context,

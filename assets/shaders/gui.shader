@@ -68,6 +68,8 @@ layout(constant_id = 0) const bool is_non_linear_colour_space = false;
 void
 main()
 {
-    vec4 sampled = in_color * textureBindless2D(in_texture_id,0, in_uv);
-    out_color = is_non_linear_colour_space ? vec4(pow(sampled.rgb, vec3(2.2)), sampled.a) : sampled;
+  vec4 sampled = in_color * textureBindless2D(in_texture_id, 0, in_uv);
+  out_color = is_non_linear_colour_space
+                ? vec4(pow(sampled.rgb, vec3(2.2)), sampled.a)
+                : sampled;
 }

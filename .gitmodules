@@ -28,3 +28,9 @@
 [submodule "third-party/ImGuizmo"]
 	path = third-party/ImGuizmo
 	url = git@github.com:CedricGuillemet/ImGuizmo.git
+[submodule "third-party/assimp"]
+	path = third-party/assimp
+	url = git@github.com:assimp/assimp.git
+[submodule "third-party/meshoptimizer"]
+	path = third-party/meshoptimizer
+	url = git@github.com:zeux/meshoptimizer.git
