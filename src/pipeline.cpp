@@ -219,22 +219,27 @@ VkGraphicsPipeline::create(IContext* context,
   std::bitset<VertexInput::input_bindings_max_count> used_bindings{};
   pipeline.attribute_count = vertex_input.get_attributes_count();
   for (auto i = 0U; i < pipeline.attribute_count; ++i) {
+    const auto& [location, binding, format, offset] = vertex_input.attributes[i];
+    assert(format != VertexFormat::Invalid);
+
     pipeline.attributes.at(i) = VkVertexInputAttributeDescription{
-      .location = vertex_input.attributes[i].location,
-      .binding = vertex_input.attributes[i].binding,
-      .format = vertex_format_to_vk_format(vertex_input.attributes[i].format),
-      .offset = static_cast<std::uint32_t>(vertex_input.attributes[i].offset),
+      .location = location,
+      .binding = binding,
+      .format = vertex_format_to_vk_format(format),
+      .offset = static_cast<std::uint32_t>(offset),
     };
 
-    if (!used_bindings.test(vertex_input.attributes[i].binding)) {
-      used_bindings.set(vertex_input.attributes[i].binding);
+    if (!used_bindings.test(binding)) {
+      used_bindings.set(binding);
       pipeline.bindings.at(pipeline.binding_count) =
         VkVertexInputBindingDescription{
-          .binding = vertex_input.attributes[i].binding,
+          .binding = binding,
           .stride =
-            vertex_input.input_bindings[vertex_input.attributes[i].binding]
+            vertex_input.input_bindings[binding]
               .stride,
-          .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+          .inputRate = vertex_input.input_bindings[binding].rate == VertexInput::VertexInputBinding::Rate::Vertex
+                         ? VK_VERTEX_INPUT_RATE_VERTEX
+                         : VK_VERTEX_INPUT_RATE_INSTANCE,
         };
       ++pipeline.binding_count;
     }

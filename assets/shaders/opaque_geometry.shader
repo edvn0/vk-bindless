@@ -22,6 +22,8 @@ layout(push_constant) uniform PushConstants
   UBO pc;
 };
 
+precise invariant gl_Position;
+
 void
 main()
 {

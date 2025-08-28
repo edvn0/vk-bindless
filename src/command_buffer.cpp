@@ -383,7 +383,7 @@ CommandBuffer::cmd_bind_depth_state(const DepthState& state) -> void
 {
   assert(is_rendering && "Depth state can only be bound during rendering");
   vkCmdSetDepthTestEnable(wrapper->command_buffer,
-                          state.is_depth_write_enabled ? VK_TRUE : VK_FALSE);
+                          state.is_depth_test_enabled ? VK_TRUE : VK_FALSE);
   vkCmdSetDepthCompareOp(wrapper->command_buffer,
                          static_cast<VkCompareOp>(state.compare_operation));
   vkCmdSetDepthWriteEnable(wrapper->command_buffer,
@@ -536,9 +536,9 @@ CommandBuffer::cmd_bind_index_buffer(BufferHandle index_buffer,
 }
 
 void
-CommandBuffer::cmd_bind_vertex_buffer(std::uint32_t index,
-                                      BufferHandle vertex_buffer,
-                                      uint64_t buffer_offset)
+CommandBuffer::cmd_bind_vertex_buffer(const std::uint32_t index,
+                                      const BufferHandle vertex_buffer,
+                                      const std::uint64_t buffer_offset)
 {
   const auto* buffer = *context->get_buffer_pool().get(vertex_buffer);
 

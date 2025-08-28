@@ -3,6 +3,7 @@
 #include "vk-bindless/handle.hpp"
 
 #include <array>
+#include <cassert>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -297,6 +298,11 @@ struct VertexInput final
   struct VertexInputBinding final
   {
     std::uint32_t stride = 0;
+        enum class Rate : std::uint8_t
+        {
+          Vertex = 0,
+          Instance = 1,
+        } rate = Rate::Vertex;
 
     auto operator<=>(const VertexInputBinding& other) const = default;
   };
@@ -322,6 +328,137 @@ struct VertexInput final
   }
 
   auto operator<=>(const VertexInput& other) const = default;
+
+static auto create(const std::initializer_list<const VertexFormat> formats, const std::initializer_list<const VertexFormat> instance_formats = {})
+    -> VertexInput
+  {
+    VertexInput vi{};
+    std::uint32_t offset = 0;
+    std::uint32_t location = 0;
+    for (const auto format : formats) {
+      vi.attributes[location] = VertexAttribute{
+        .location = location,
+        .binding = 0,
+        .format = format,
+        .offset = offset,
+      };
+      offset += [&]() {
+        switch (format) {
+          case VertexFormat::Float1:
+          case VertexFormat::Byte1:
+          case VertexFormat::UByte1:
+          case VertexFormat::Short1:
+          case VertexFormat::UShort1:
+          case VertexFormat::Int1:
+          case VertexFormat::UInt1:
+          case VertexFormat::HalfFloat1:
+            return 4;
+          case VertexFormat::Float2:
+          case VertexFormat::Byte2:
+          case VertexFormat::UByte2:
+          case VertexFormat::Short2:
+          case VertexFormat::UShort2:
+          case VertexFormat::Int2:
+          case VertexFormat::UInt2:
+          case VertexFormat::HalfFloat2:
+          case VertexFormat::Byte2Norm:
+          case VertexFormat::UByte2Norm:
+            return 8;
+          case VertexFormat::Float3:
+          case VertexFormat::Byte3:
+          case VertexFormat::UByte3:
+          case VertexFormat::Short3:
+          case VertexFormat::UShort3:
+          case VertexFormat::Int3:
+          case VertexFormat::UInt3:
+          case VertexFormat::HalfFloat3:
+            return 12;
+          case VertexFormat::Float4:
+          case VertexFormat::Byte4:
+          case VertexFormat::UByte4:
+          case VertexFormat::Short4:
+          case VertexFormat::UShort4:
+          case VertexFormat::Int4:
+          case VertexFormat::UInt4:
+          case VertexFormat::HalfFloat4:
+          case VertexFormat::Byte4Norm:
+          case VertexFormat::UByte4Norm:
+            return 16;
+          case VertexFormat::Int_2_10_10_10_REV:
+            return 4;
+          default:
+            assert(false);
+        }
+        return 4;
+      }();
+      location++;
+    }
+    vi.input_bindings[0] = VertexInputBinding{ .stride = offset };
+
+    for (const auto format : instance_formats) {
+      vi.attributes[location] = VertexAttribute{
+        .location = location,
+        .binding = 1,
+        .format = format,
+        .offset = offset,
+      };
+      offset += [&]() {
+        switch (format) {
+          case VertexFormat::Float1:
+          case VertexFormat::Byte1:
+          case VertexFormat::UByte1:
+          case VertexFormat::Short1:
+          case VertexFormat::UShort1:
+          case VertexFormat::Int1:
+          case VertexFormat::UInt1:
+          case VertexFormat::HalfFloat1:
+            return 4;
+          case VertexFormat::Float2:
+          case VertexFormat::Byte2:
+          case VertexFormat::UByte2:
+          case VertexFormat::Short2:
+          case VertexFormat::UShort2:
+          case VertexFormat::Int2:
+          case VertexFormat::UInt2:
+          case VertexFormat::HalfFloat2:
+          case VertexFormat::Byte2Norm:
+          case VertexFormat::UByte2Norm:
+            return 8;
+          case VertexFormat::Float3:
+          case VertexFormat::Byte3:
+          case VertexFormat::UByte3:
+          case VertexFormat::Short3:
+          case VertexFormat::UShort3:
+          case VertexFormat::Int3:
+          case VertexFormat::UInt3:
+          case VertexFormat::HalfFloat3:
+            return 12;
+          case VertexFormat::Float4:
+          case VertexFormat::Byte4:
+          case VertexFormat::UByte4:
+          case VertexFormat::Short4:
+          case VertexFormat::UShort4:
+          case VertexFormat::Int4:
+          case VertexFormat::UInt4:
+          case VertexFormat::HalfFloat4:
+          case VertexFormat::Byte4Norm:
+          case VertexFormat::UByte4Norm:
+            return 16;
+          case VertexFormat::Int_2_10_10_10_REV:
+            return 4;
+          default:
+            assert(false);
+        }
+        return 4;
+      }();
+      location++;
+    }
+    if (instance_formats.size() > 0) {
+      vi.input_bindings[1] = VertexInputBinding{ .stride = offset };
+    }
+
+    return vi;
+  }
 };
 
 struct ColourAttachment
@@ -470,6 +607,7 @@ struct StencilState
 struct DepthState
 {
   CompareOp compare_operation{ CompareOp::AlwaysPass };
+  bool is_depth_test_enabled{ true };
   bool is_depth_write_enabled{ false };
 };
 

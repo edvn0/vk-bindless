@@ -62,11 +62,11 @@ public:
   static auto create(IContext& context, const BufferDescription& desc)
     -> Holder<BufferHandle>;
 
-  auto get_buffer() const -> VkBuffer { return buffer; }
-  auto get_mapped_pointer() const -> void* { return allocation.mapped_data; }
-  auto is_mapped() const -> bool { return allocation.mapped_data != nullptr; }
-  auto get_size() const -> VkDeviceSize { return size; }
-  auto get_memory() const -> VkDeviceMemory { return allocation.memory; }
+  [[nodiscard]] auto get_buffer() const -> VkBuffer { return buffer; }
+  [[nodiscard]]auto get_mapped_pointer() const -> void* { return allocation.mapped_data; }
+  [[nodiscard]]auto is_mapped() const -> bool { return allocation.mapped_data != nullptr; }
+  [[nodiscard]]auto get_size() const -> VkDeviceSize { return size; }
+  [[nodiscard]]auto get_memory() const -> VkDeviceMemory { return allocation.memory; }
 
   auto flush_mapped_memory(IContext&,
                            std::uint64_t offset = 0,
@@ -86,7 +86,7 @@ public:
     }
     std::memcpy(allocation.mapped_data, R.data(), R.size() * Size);
   }
-  auto upload(std::span<const std::byte> data)
+  auto upload(const std::span<const std::byte> data) const
   {
     if (!is_mapped()) {
       throw std::runtime_error("Buffer is not mapped");

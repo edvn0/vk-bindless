@@ -498,7 +498,7 @@ Context::create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
 #if IS_DEBUG
   constexpr auto request_validation = true;
 #else
-  constexpr auto request_validation = false;
+  constexpr auto request_validation = true;
 #endif
   vkb::InstanceBuilder builder;
   auto inst_ret = builder.set_app_name("Bindless Vulkan")

@@ -62,7 +62,6 @@ LodGenerator::process_mesh_from_data(std::span<const glm::vec3> positions,
                                      std::span<const std::uint32_t> indices)
   -> MeshData
 {
-
   return pimpl->create_mesh_from_raw_data(
     positions, normals, texcoords, indices);
 }
@@ -104,6 +103,8 @@ LodGenerator::process_assimp_mesh(const aiMesh* ai_mesh) -> MeshData
   // Extract original indices
   std::vector<uint32_t> original_indices;
   pimpl->extract_indices_from_assimp(ai_mesh, original_indices);
+
+  mesh.indices = original_indices;
 
   // Generate LODs
   pimpl->generate_lod_chain(mesh.vertices, original_indices, mesh);
@@ -152,7 +153,7 @@ LodGenerator::set_lod_config(const LodConfig& config) -> void
   pimpl->config = config;
 }
 
-// Implementation methods (would be in .cpp file)
+// Implementation methods
 void
 LodGenerator::Impl::extract_vertices_from_assimp(
   const aiMesh* ai_mesh,
@@ -223,7 +224,6 @@ LodGenerator::Impl::create_mesh_from_raw_data(
   std::span<const glm::vec2> texcoords,
   std::span<const std::uint32_t> indices)
 {
-
   MeshData mesh;
 
   // Combine raw data into Vertex structures
@@ -244,6 +244,8 @@ LodGenerator::Impl::create_mesh_from_raw_data(
     mesh.shadow_vertices.push_back(sv);
   }
 
+  mesh.indices.assign(indices.begin(), indices.end());
+
   // Generate LODs
   generate_lod_chain(mesh.vertices, indices, mesh);
   generate_shadow_lods(mesh.shadow_vertices, indices, mesh);
@@ -257,23 +259,30 @@ LodGenerator::Impl::generate_lod_chain(
   std::span<const uint32_t> original_indices,
   MeshData& mesh)
 {
-
   std::vector<uint32_t> current_indices(original_indices.begin(),
                                         original_indices.end());
 
   // LOD 0 - Original mesh
-  auto lod0_offset = static_cast<std::uint32_t>(global_index_buffer.size());
+  const auto lod0_offset = static_cast<std::uint32_t>(global_index_buffer.size());
   global_index_buffer.insert(
     global_index_buffer.end(), current_indices.begin(), current_indices.end());
 
   mesh.lod_levels.push_back(
     { lod0_offset, static_cast<uint32_t>(current_indices.size()), 0.0f });
 
+  // Ensure we have target errors configured
+  if (config.target_errors.empty()) {
+    config.target_errors = { 0.01f, 0.05f, 0.1f, 0.2f };
+  }
+
   // Generate additional LOD levels
-  for (size_t lod = 0; lod < config.target_errors.size(); lod++) {
-    size_t target_index_count = current_indices.size() / 2;
-    if (target_index_count < 3)
+  for (const auto& target_error : config.target_errors) {
+    auto target_index_count = static_cast<std::size_t>(static_cast<float>(current_indices.size()) * 0.7f);
+    if (target_index_count < 12) // Ensure at least 4 triangles minimum
       break;
+
+    // Ensure target count is multiple of 3 for triangles
+    target_index_count = (target_index_count / 3) * 3;
 
     std::vector<uint32_t> lod_indices(current_indices.size());
 
@@ -285,21 +294,29 @@ LodGenerator::Impl::generate_lod_chain(
                        vertices.size(),
                        sizeof(Vertex),
                        target_index_count,
-                       config.target_errors[lod]);
-    if (result_count == 0 || result_count >= current_indices.size()) {
+                       target_error);
+
+    // Better validation of result
+    if (result_count == 0 || result_count >= current_indices.size() || result_count < 3) {
+      break;
+    }
+
+    // Ensure result is multiple of 3
+    result_count = (result_count / 3) * 3;
+    if (result_count < 3) {
       break;
     }
 
     lod_indices.resize(result_count);
     optimize_lod_indices(lod_indices, vertices);
 
-    auto offset = static_cast<std::uint32_t>(global_index_buffer.size());
+    const auto offset = static_cast<std::uint32_t>(global_index_buffer.size());
     global_index_buffer.insert(
       global_index_buffer.end(), lod_indices.begin(), lod_indices.end());
 
-    mesh.lod_levels.push_back({ offset,
+    mesh.lod_levels.emplace_back( offset,
                                 static_cast<uint32_t>(result_count),
-                                config.target_errors[lod] });
+                                target_error);
 
     current_indices = std::move(lod_indices);
   }
@@ -327,47 +344,73 @@ LodGenerator::Impl::generate_shadow_lods(
   std::span<const uint32_t> original_indices,
   MeshData& mesh)
 {
+  std::vector<uint32_t> current_indices(original_indices.begin(), original_indices.end());
 
-  size_t target_count = original_indices.size() /
-                        static_cast<size_t>(config.shadow_reduction_factor);
-  target_count = std::max(target_count, size_t(3));
+  // Shadow LOD 0 - Original mesh (for shadows)
+  const auto lod0_offset = static_cast<std::uint32_t>(global_shadow_index_buffer.size());
+  global_shadow_index_buffer.insert(
+    global_shadow_index_buffer.end(), current_indices.begin(), current_indices.end());
 
-  std::vector<uint32_t> shadow_indices(original_indices.size());
+  mesh.shadow_lod_levels.push_back(
+    {lod0_offset, static_cast<uint32_t>(current_indices.size()), 0.0f});
 
-  auto result_count =
-    meshopt_simplify(shadow_indices.data(),
-                     original_indices.data(),
-                     original_indices.size(),
-                     reinterpret_cast<const float*>(shadow_vertices.data()),
-                     shadow_vertices.size(),
-                     sizeof(ShadowVertex),
-                     target_count,
-                     config.shadow_error_threshold);
+  // Ensure we have shadow target errors configured
+  if (config.shadow_target_errors.empty()) {
+    config.shadow_target_errors = { 0.1f, 0.3f, 0.6f };
+  }
 
-  if (result_count > 0) {
+  // Generate additional shadow LOD levels (more aggressive simplification than main geometry)
+  for (const auto& target_error : config.shadow_target_errors) {
+    auto target_index_count = static_cast<std::size_t>(
+      static_cast<float>(current_indices.size()) / config.shadow_reduction_factor);
+
+    if (target_index_count < 12) // Ensure at least 4 triangles minimum
+      break;
+
+    // Ensure target count is multiple of 3 for triangles
+    target_index_count = (target_index_count / 3) * 3;
+
+    std::vector<uint32_t> shadow_indices(current_indices.size());
+
+    auto result_count =
+      meshopt_simplify(shadow_indices.data(),
+                       current_indices.data(),
+                       current_indices.size(),
+                       reinterpret_cast<const float*>(shadow_vertices.data()),
+                       shadow_vertices.size(),
+                       sizeof(ShadowVertex),
+                       target_index_count,
+                       target_error);
+
+    // Validate result
+    if (result_count == 0 || result_count >= current_indices.size() || result_count < 3) {
+      break;
+    }
+
+    // Ensure result is multiple of 3
+    result_count = (result_count / 3) * 3;
+    if (result_count < 3) {
+      break;
+    }
+
     shadow_indices.resize(result_count);
 
+    // Optimize shadow indices (simpler than main geometry - only vertex cache)
     meshopt_optimizeVertexCache(shadow_indices.data(),
                                 shadow_indices.data(),
                                 result_count,
                                 shadow_vertices.size());
 
-    mesh.shadow_index_offset =
-      static_cast<std::uint32_t>(global_shadow_index_buffer.size());
-    mesh.shadow_index_count = static_cast<std::uint32_t>(result_count);
-
+    const auto offset = static_cast<std::uint32_t>(global_shadow_index_buffer.size());
     global_shadow_index_buffer.insert(global_shadow_index_buffer.end(),
                                       shadow_indices.begin(),
                                       shadow_indices.end());
-  } else {
-    mesh.shadow_index_offset =
-      static_cast<std::uint32_t>(global_shadow_index_buffer.size());
-    mesh.shadow_index_count =
-      static_cast<std::uint32_t>(original_indices.size());
 
-    global_shadow_index_buffer.insert(global_shadow_index_buffer.end(),
-                                      original_indices.begin(),
-                                      original_indices.end());
+    mesh.shadow_lod_levels.emplace_back(offset,
+                                        static_cast<uint32_t>(result_count),
+                                        target_error);
+
+    current_indices = std::move(shadow_indices);
   }
 }
 
@@ -383,25 +426,29 @@ Mesh::create(IContext& context, const std::string_view path_view)
 {
   auto path = std::filesystem::path{ path_view };
 
+  using namespace std::string_view_literals;
   if (!std::filesystem::exists(path))
     return unexpected<std::string>{ "File does not exist." };
-  if (!in(path.extension(), ".obj", ".gltf", ".glb"))
+  if (!in(path.extension(), ".obj"sv, ".gltf"sv, ".glb"sv))
     return unexpected<std::string>{ "Not obj or gltf." };
 
+  // Configure LOD settings BEFORE loading
   LodGenerator generator;
-  auto meshes = generator.load_model(path.string());
+  LodGenerator::LodConfig lod_config{};
+  lod_config.target_errors = { 0.005f, 0.02f, 0.08f, 0.15f, 0.3f, 0.5f, 0.7f, 0.9f };
+  lod_config.shadow_target_errors = { 0.1f, 0.3f, 0.6f, 0.9f }; // More aggressive for shadows
+  lod_config.shadow_reduction_factor = 6.0f;
+  lod_config.overdraw_threshold = 1.05f;
+  lod_config.shadow_error_threshold = 0.2f;
+  generator.set_lod_config(lod_config);
 
+  auto meshes = generator.load_model(path.string());
   if (meshes.empty())
     return unexpected<std::string>{ "No meshes found." };
   if (meshes.size() != 1)
     return unexpected<std::string>{
       "Only single-mesh assets supported for now."
     };
-
-  LodGenerator::LodConfig lod_config{};
-  lod_config.target_errors = { 0.005f, 0.02f, 0.08f, 0.15f, 0.3f };
-  lod_config.shadow_reduction_factor = 6.0f;
-  generator.set_lod_config(lod_config);
 
   auto index_buffer_data = generator.get_global_index_buffer();
   auto shadow_index_buffer_data = generator.get_global_shadow_index_buffer();
@@ -411,6 +458,19 @@ Mesh::create(IContext& context, const std::string_view path_view)
   Mesh mesh{};
 
   mesh.mesh_data = loaded_mesh;
+
+  if (loaded_mesh.vertices.empty()) {
+    return unexpected<std::string>{ "No vertices in mesh." };
+  }
+  if (index_buffer_data.empty()) {
+    return unexpected<std::string>{ "No indices generated." };
+  }
+  if (loaded_mesh.lod_levels.empty()) {
+    return unexpected<std::string>{ "No LOD levels generated." };
+  }
+  if (loaded_mesh.shadow_lod_levels.empty()) {
+    return unexpected<std::string>{ "No shadow LOD levels generated." };
+  }
 
   // Vertex buffer
   mesh.vertex_buffer = VkDataBuffer::create(

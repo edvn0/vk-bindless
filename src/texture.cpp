@@ -281,10 +281,10 @@ is_depth{ static_cast<bool>(description.usage_flags &
   view_info.subresourceRange.levelCount = mip_levels;
   view_info.subresourceRange.baseArrayLayer = 0;
   view_info.subresourceRange.layerCount = array_layers;
-  view_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-  view_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-  view_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-  view_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+  view_info.components.r = VK_COMPONENT_SWIZZLE_R;
+  view_info.components.g = VK_COMPONENT_SWIZZLE_G;
+  view_info.components.b = VK_COMPONENT_SWIZZLE_B;
+  view_info.components.a = VK_COMPONENT_SWIZZLE_A;
 
   VK_VERIFY(
     vkCreateImageView(ctx.get_device(), &view_info, nullptr, &image_view));

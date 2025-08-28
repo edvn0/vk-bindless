@@ -15,9 +15,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(ENABLE_TESTING "Enable testing" ON)
 
-find_package(Vulkan REQUIRED COMPONENTS glslang glslc glslangValidator)
+find_package(Vulkan REQUIRED)
 find_package(SPIRV-Tools CONFIG REQUIRED)
 find_package(SPIRV-Tools-opt CONFIG REQUIRED)
+find_package(glslang CONFIG REQUIRED)
 
 check_cxx_source_compiles("
 #include <expected>
@@ -78,15 +79,15 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         vk-bootstrap
         CustomVMA
         glfw
-        Vulkan::glslang
+        glslang::glslang
         SPIRV-Tools-static
         SPIRV-Tools-opt
         spirv-reflect-static
+        meshoptimizer::meshoptimizer
+        assimp::assimp
         PUBLIC
         glm::glm
         imgui::imgui
-        meshoptimizer::meshoptimizer
-        assimp::assimp
 )
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_LEFT_HANDED)

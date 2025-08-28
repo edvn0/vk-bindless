@@ -25,7 +25,7 @@ layout(location = 1) in vec2 v_uvs;
 layout(location = 0) out vec4 out_colour;
 
 vec3
-ACESFilm(vec3 x)
+aces(vec3 x)
 {
   const float a = 2.51;
   const float b = 0.03;
@@ -36,7 +36,7 @@ ACESFilm(vec3 x)
 }
 
 vec3
-GammaCorrect(vec3 color)
+gamma_correct(vec3 color)
 {
   return pow(color, vec3(1.0 / 2.2));
 }
@@ -45,7 +45,7 @@ void
 main()
 {
   vec3 color = textureBindless2D(index, 0, v_uvs).rgb;
-  color = ACESFilm(color);
-  color = GammaCorrect(color);
+  color = aces(color);
+  color = gamma_correct(color);
   out_colour = vec4(color, 1.0);
 }

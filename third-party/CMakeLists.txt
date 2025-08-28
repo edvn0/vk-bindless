@@ -3,7 +3,8 @@ add_subdirectory(VulkanMemoryAllocator)
 set(GLFW_BUILD_WAYLAND OFF)
 set(GLFW_BUILD_X11 ON)
 add_subdirectory(glfw)
-if (NOT HAS_STD_EXPECTED)
+
+if(NOT HAS_STD_EXPECTED)
     set(EXPECTED_BUILD_TESTS OFF)
     set(EXPECTED_BUILD_PACKAGE_DEB OFF)
     add_subdirectory(expected)
@@ -17,19 +18,18 @@ add_subdirectory(SPIRV-Reflect)
 add_subdirectory(glm)
 
 function(ADD_IMGUI)
-     # Prevent redefinition if called multiple times
-    if (TARGET imgui::imgui)
+    # Prevent redefinition if called multiple times
+    if(TARGET imgui::imgui)
         return()
     endif()
 
-    
     file(GLOB IMGUI_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/imgui/*.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/imgui/*.cpp"
     )
-    
+
     # Add vulkan
     list(APPEND IMGUI_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends/imgui_impl_glfw.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends/imgui_impl_vulkan.cpp")
-    
+
     add_library(imgui STATIC ${IMGUI_SOURCES})
     add_library(imgui::imgui ALIAS imgui)
 
@@ -42,17 +42,18 @@ function(ADD_IMGUI)
 endfunction()
 
 function(ADD_IMPLOT)
-    if (TARGET implot::implot)
+    if(TARGET implot::implot)
         return()
     endif()
 
     set(implot_dir "${CMAKE_CURRENT_SOURCE_DIR}/implot")
 
-    if (EXISTS "${implot_dir}/implot.h")
+    if(EXISTS "${implot_dir}/implot.h")
         set(implot_sources
-                "${implot_dir}/implot.cpp"
-                "${implot_dir}/implot_items.cpp"
+            "${implot_dir}/implot.cpp"
+            "${implot_dir}/implot_items.cpp"
         )
+
         # optional demo:
         list(APPEND implot_sources "${implot_dir}/implot_demo.cpp")
 
@@ -60,33 +61,34 @@ function(ADD_IMPLOT)
         add_library(implot::implot ALIAS implot)
 
         target_include_directories(implot PUBLIC
-                "${implot_dir}"
-                "${CMAKE_CURRENT_SOURCE_DIR}/imgui"
+            "${implot_dir}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/imgui"
         )
         target_link_libraries(implot PUBLIC imgui::imgui)
     endif()
 endfunction()
 
 function(ADD_IMGUIZMO)
-    if (TARGET imguizmo::imguizmo)
+    if(TARGET imguizmo::imguizmo)
         return()
     endif()
 
     # Try common folder names
     set(_imguizmo_dirs
-            "${CMAKE_CURRENT_SOURCE_DIR}/ImGuizmo"
-            "${CMAKE_CURRENT_SOURCE_DIR}/imguizmo"
+        "${CMAKE_CURRENT_SOURCE_DIR}/ImGuizmo"
+        "${CMAKE_CURRENT_SOURCE_DIR}/imguizmo"
     )
 
     set(_found_dir "")
+
     foreach(d IN LISTS _imguizmo_dirs)
-        if (EXISTS "${d}/ImGuizmo.h" AND EXISTS "${d}/ImGuizmo.cpp")
+        if(EXISTS "${d}/ImGuizmo.h" AND EXISTS "${d}/ImGuizmo.cpp")
             set(_found_dir "${d}")
             break()
         endif()
     endforeach()
 
-    if (NOT _found_dir)
+    if(NOT _found_dir)
         return()
     endif()
 
@@ -94,20 +96,20 @@ function(ADD_IMGUIZMO)
     add_library(imguizmo::imguizmo ALIAS imguizmo)
 
     target_include_directories(imguizmo PUBLIC
-            "${_found_dir}"
-            "${CMAKE_CURRENT_SOURCE_DIR}/imgui"
+        "${_found_dir}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/imgui"
     )
     target_link_libraries(imguizmo PUBLIC imgui::imgui)
 
-    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         target_compile_options(imguizmo PRIVATE -Wno-unused-parameter -Wno-sign-conversion)
-    elseif (MSVC)
+    elseif(MSVC)
         target_compile_options(imguizmo PRIVATE /wd4244 /wd4267)
     endif()
 endfunction()
 
 function(ADD_ASSIMP)
-    if (TARGET assimp::assimp)
+    if(TARGET assimp::assimp)
         return()
     endif()
 
@@ -119,23 +121,23 @@ function(ADD_ASSIMP)
     set(ASSIMP_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
 
     # Disable all exporters
-        set(ASSIMP_BUILD_NO_EXPORT ON)
+    set(ASSIMP_BUILD_NO_EXPORT ON)
 
     # Disable all importers first
-       set(ASSIMP_IMPORTERS_ENABLED GLTF OBJ)
-       set(ASSIMP_BUILD_ALL_EXPORTERS_BY_DEFAULT OFF)
-       set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF) 
+    set(ASSIMP_IMPORTERS_ENABLED GLTF OBJ)
+    set(ASSIMP_BUILD_ALL_EXPORTERS_BY_DEFAULT OFF)
+    set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF)
 
     # Keep OBJ importer (default enabled)
     # Enable glTF importer (+ optional Draco)
     option(ASSIMP_BUILD_GLTF_IMPORTER "Enable glTF importer" ON)
-    option(ASSIMP_BUILD_DRACO "Enable Draco compression for glTF" ON)
+    option(ASSIMP_BUILD_DRACO "Enable Draco compression for glTF" OFF)
 
     add_subdirectory(assimp)
 endfunction()
 
 function(ADD_MESHOPTIMIZER)
-    if (TARGET meshoptimizer::meshoptimizer)
+    if(TARGET meshoptimizer::meshoptimizer)
         return()
     endif()
 
@@ -159,6 +161,6 @@ ADD_IMGUIZMO()
 ADD_ASSIMP()
 ADD_MESHOPTIMIZER()
 
-if (ENABLE_TESTING)
+if(ENABLE_TESTING)
     add_subdirectory(doctest)
 endif()

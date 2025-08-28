@@ -39,8 +39,7 @@ struct MeshData
   std::vector<ShadowVertex> shadow_vertices;
   std::vector<std::uint32_t> indices;
   std::vector<LodInfo> lod_levels;
-  std::uint32_t shadow_index_offset;
-  std::uint32_t shadow_index_count;
+  std::vector<LodInfo> shadow_lod_levels; // Multiple shadow LOD levels
 };
 
 class LodGenerator
@@ -78,13 +77,14 @@ public:
   auto clear_buffers() -> void;
 
   // Get buffer sizes for allocation
-  auto get_index_buffer_size_bytes() const -> std::size_t;
-  auto get_shadow_index_buffer_size_bytes() const -> std::size_t;
+  [[nodiscard]] auto get_index_buffer_size_bytes() const -> std::size_t;
+  [[nodiscard]] auto get_shadow_index_buffer_size_bytes() const -> std::size_t;
 
   // Configuration
   struct LodConfig
   {
     std::vector<float> target_errors = { 0.01f, 0.05f, 0.1f, 0.2f };
+    std::vector<float> shadow_target_errors = { 0.1f, 0.3f, 0.6f };
     float shadow_error_threshold = 0.2f;
     float shadow_reduction_factor = 4.0f;
     float overdraw_threshold = 1.05f;
@@ -118,10 +118,23 @@ public:
     return *lod_shadow_index_buffer;
   }
   [[nodiscard]] auto get_mesh_data() const -> const auto& { return mesh_data; }
-  [[nodiscard]] auto get_index_binding_data(std::size_t lod_index) const
+  [[nodiscard]] auto get_index_binding_data(const std::size_t lod_index) const
   {
     auto& data = mesh_data.lod_levels.at(lod_index);
     return std::make_pair(data.index_count, data.index_offset);
+  }
+  [[nodiscard]] auto get_shadow_index_binding_data(const std::size_t lod_index) const
+  {
+    auto& data = mesh_data.shadow_lod_levels.at(lod_index);
+    return std::make_pair(data.index_count, data.index_offset);
+  }
+  [[nodiscard]] auto get_lod_count() const -> std::size_t
+  {
+    return mesh_data.lod_levels.size();
+  }
+  [[nodiscard]] auto get_shadow_lod_count() const -> std::size_t
+  {
+    return mesh_data.shadow_lod_levels.size();
   }
 
   static auto create(IContext&, std::string_view)

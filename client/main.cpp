@@ -235,7 +235,7 @@ protected:
   }
 
 public:
-  auto tick(double dt) const -> void
+  auto tick(const double dt) const -> void
   {
     const bool imgui_block = ImGui::GetIO().WantCaptureMouse;
     behaviour->update(dt, mouse_norm, mouse_held && !imgui_block);
@@ -281,24 +281,38 @@ struct FrameUniform
   static auto create(VkBindless::IContext& context,
                      const std::span<const std::byte> data)
   {
-    auto size = data.size_bytes();
+    const auto size = data.size_bytes();
     if (size == 0 || size % 16 != 0) {
       throw std::runtime_error(
         "FrameUniform data must be a non-zero multiple of 16 bytes");
     }
-    FrameUniform<Count> uniform;
-    VkBindless::BufferDescription desc{
+    FrameUniform  uniform;
+    const VkBindless::BufferDescription desc{
       .data = data,
       .size = size,
       .storage = VkBindless::StorageType::HostVisible,
       .usage = VkBindless::BufferUsageFlags::UniformBuffer,
       .debug_name = "FrameUniform Buffer",
     };
-    for (std::uint32_t i = 0; i < Count; ++i) {
-      uniform.at(i) = VkBindless::VkDataBuffer::create(context, desc);
+    for (auto& buf : uniform.buffers) {
+      buf = VkBindless::VkDataBuffer::create(context, desc);
     }
     return uniform;
   }
+
+  template<typename T>
+  auto upload(VkBindless::IContext& context, const std::span<const T> data)
+    -> void
+  {
+    upload(context, std::as_bytes(data));
+  }
+  template<typename T>
+auto upload(VkBindless::IContext& context, const std::span<T> data)
+  -> void
+  {
+    upload(context, std::as_bytes(data));
+  }
+
   auto upload(VkBindless::IContext& context,
               const std::span<const std::byte> data) -> void
   {
@@ -380,8 +394,7 @@ as_null(K* k = VK_NULL_HANDLE) -> decltype(k)
   return static_cast<decltype(k)>(VK_NULL_HANDLE);
 }
 
-auto
-main() -> std::int32_t
+auto run_main() -> void
 {
   using namespace VkBindless;
   using GLFWPointer = std::unique_ptr<GLFWwindow, decltype(&destroy_glfw)>;
@@ -396,7 +409,7 @@ main() -> std::int32_t
     const char* error{};
     glfwGetError(&error);
     std::cout << std::format("GLFW error: %s\n", error);
-    return 1;
+    return;
   }
   glfwSetErrorCallback([](int c, const char* d) {
     std::cerr << std::format("GLFW error {}: {}\n", c, d);
@@ -429,7 +442,7 @@ main() -> std::int32_t
   if (!context) {
     std::cerr << "Failed to create Vulkan context: " << context.error().message
               << std::endl;
-    return 1;
+    return;
   }
   auto vulkan_context = std::move(context.value());
   SCOPE_EXIT
@@ -449,13 +462,12 @@ main() -> std::int32_t
   const auto game_handler = std::make_shared<GameLogicHandler>();
   const auto ui_handler = std::make_shared<UIHandler>();
 
-  auto camera_behaviour = std::make_unique<FirstPersonCameraBehaviour>(
-    glm::vec3{ 0, 3, -5.F }, glm::vec3{ 0, 1.5F, 0.0F }, glm::vec3{ 0, 1, 0 });
-  auto* camera_behaviour_ptr = camera_behaviour.get();
-  Camera camera(std::move(camera_behaviour));
+    Camera camera(std::make_unique<FirstPersonCameraBehaviour>(
+      glm::vec3{ 0, 140, -200.F }, glm::vec3{ 0, 0, 0.0F }, glm::vec3{ 0, 1, 0 }));
 
   const auto camera_input =
-    std::make_shared<CameraInputHandler>(window.get(), camera_behaviour_ptr);
+    std::make_shared<CameraInputHandler>(window.get(), dynamic_cast<FirstPersonCameraBehaviour*>(
+        camera.get_behaviour()));
 
   event_dispatcher.subscribe<EventSystem::KeyEvent,
                              EventSystem::MouseMoveEvent,
@@ -478,6 +490,9 @@ main() -> std::int32_t
   auto opaque_geometry = VkShader::create(
     vulkan_context.get(), "assets/shaders/opaque_geometry.shader");
 
+  auto prepass = VkShader::create(
+    vulkan_context.get(), "assets/shaders/prepass.shader");
+
   // MSAA sample count
   constexpr VkSampleCountFlagBits kMsaa = VK_SAMPLE_COUNT_4_BIT;
 
@@ -485,30 +500,38 @@ main() -> std::int32_t
   auto cube_pipeline_handle = VkGraphicsPipeline::create(
     vulkan_context.get(),
     {
-      .shader = static_cast<ShaderModuleHandle>(shader),
+      .shader = *shader,
       .color = { ColourAttachment{ .format = Format::R_F32 } },
       .depth_format = Format::Z_F32,
       .sample_count = kMsaa, // ensure pipeline is compatible with MSAA target
       .debug_name = "Cube Pipeline",
     });
 
+  VertexInput static_opaque_geometry_vertex_input = VertexInput::create({VertexFormat::Float3,
+                                                                      VertexFormat::Float3,
+                                                                      VertexFormat::Float2});
   auto static_opaque_geometry_pipeline_handle = VkGraphicsPipeline::create(
     vulkan_context.get(),
     {
-      .shader = static_cast<ShaderModuleHandle>(shader),
+      .vertex_input = static_opaque_geometry_vertex_input,
+      .shader = *opaque_geometry,
       .color = { ColourAttachment{ .format = Format::R_F32 } },
       .depth_format = Format::Z_F32,
+      .cull_mode = CullMode::Back,
       .sample_count = kMsaa, // ensure pipeline is compatible with MSAA target
       .debug_name = "Static Opaque Pipeline",
     });
 
-  SCOPE_EXIT
+  auto static_opaque_prepass_handle = VkGraphicsPipeline::create(
+  vulkan_context.get(),
   {
-    shader.reset();
-    cube_pipeline_handle.reset();
-    opaque_geometry.reset();
-    static_opaque_geometry_pipeline_handle.reset();
-  };
+    .vertex_input = VertexInput::create({VertexFormat::Float3,}),
+    .shader = *prepass,
+    .depth_format = Format::Z_F32,
+    .cull_mode = CullMode::Back,
+    .sample_count = kMsaa, // ensure pipeline is compatible with MSAA target
+    .debug_name = "Static Opaque Prepass Pipeline",
+  });
 
   // Offscreen textures: MSAA color, resolved single-sample color, MSAA depth
   auto null_k_bytes = [](auto k = 0) {
@@ -637,18 +660,13 @@ main() -> std::int32_t
   auto post_pipeline = VkGraphicsPipeline::create(
     vulkan_context.get(),
     {
-      .shader = static_cast<ShaderModuleHandle>(post_shader),
+      .shader = *post_shader,
       .color = { ColourAttachment{ .format = Format::BGRA_UN8 } },
       .depth_format = Format::Invalid,
       .sample_count = VK_SAMPLE_COUNT_1_BIT,
       .debug_name = "Post Pipeline",
     });
 
-  SCOPE_EXIT
-  {
-    post_shader.reset();
-    post_pipeline.reset();
-  };
 
   double last_time = glfwGetTime();
 
@@ -664,6 +682,9 @@ main() -> std::int32_t
     }
   };
 
+  static int lod_choice = 0;
+  static int shadow_lod_choice = 0;
+
   while (!glfwWindowShouldClose(window.get())) {
     event_dispatcher.process_events();
     const double now = glfwGetTime();
@@ -675,59 +696,6 @@ main() -> std::int32_t
     glfwGetFramebufferSize(window.get(), &new_width, &new_height);
     if (!new_width || !new_height)
       continue;
-
-    // Recreate offscreen textures if window size changed
-    ensure_size(new_width, new_height);
-
-    // Acquire command buffer
-    auto& buf = vulkan_context->acquire_command_buffer();
-
-    // ---------------- PASS 1: OFFSCREEN GEOMETRY (MSAA -> resolve)
-    // ----------------
-    RenderPass gbuffer_pass {
-            .color= {
-                RenderPass::AttachmentDescription{
-                    .load_op = LoadOp::Clear,
-                    .store_op = StoreOp::MsaaResolve,
-                    .clear_colour = std::array{0.1F, 0.1F, 0.12F, 1.0F},
-                },
-            },
-            .depth ={ .load_op = LoadOp::Clear, .store_op = StoreOp::DontCare, .clear_depth = 0.0F },
-            .stencil = {},
-            .layer_count = 1,
-            .view_mask = 0,
-        };
-
-    // Framebuffer: render into color_msaa, resolve into color_resolved
-    // NOTE: If your Framebuffer::AttachmentDescription doesn't have
-    // resolve_texture, add a resolve_texture member in your wrapper and wire it
-    // to VkRenderingAttachmentInfo.resolveImageView
-    Framebuffer gbuffer_fb{
-            .color = {
-                Framebuffer::AttachmentDescription{
-                    .texture = *color_msaa,
-                    .resolve_texture = *color_resolved, // <<-- requires wrapper support for resolve
-                },
-            },
-            .depth_stencil = { .texture = *depth_msaa },
-            .debug_name = "GBuffer (MSAA + Resolve)",
-        };
-
-    buf.cmd_begin_rendering(gbuffer_pass, gbuffer_fb, {});
-
-    /*
-    // Optional: draw any UI that you want baked into the resolved image (if
-    // desired)
-    imgui->begin_frame(gbuffer_fb);
-    ImGui::Begin(
-      "Texture Viewer - Offscreen", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::Text(
-      "This ImGui is rendered into the offscreen resolved target if you want.");
-    ImGui::End();
-    imgui->end_frame(
-      buf, *submit=*); // submit=false so we don't end rendering before
-                              // draw; depends on wrapper
-                              */
 
     // Update UBO
     glm::vec3 dir;
@@ -757,7 +725,7 @@ main() -> std::int32_t
       .texture = 0,
       .cube_texture = 0,
     };
-    main_ubo.upload(*vulkan_context, std::as_bytes(std::span{ &ubo_data, 1 }));
+    main_ubo.upload(*vulkan_context, std::span{ &ubo_data, 1 });
 
     struct PC
     {
@@ -765,27 +733,85 @@ main() -> std::int32_t
     };
     PC pc{ .ubo_address = main_ubo.get_address(*vulkan_context) };
 
-    buf.cmd_bind_graphics_pipeline(*cube_pipeline_handle);
-    buf.cmd_bind_depth_state({
-      .compare_operation = CompareOp::Greater,
-      .is_depth_write_enabled = true,
-    });
-    buf.cmd_push_constants<PC>(pc, 0);
-    buf.cmd_draw(36, 1, 0, 0);
+    // Recreate offscreen textures if window size changed
+    ensure_size(new_width, new_height);
+
+    // Acquire command buffer
+    auto& buf = vulkan_context->acquire_command_buffer();
+
+    // PASS 0: Predepth
+        buf.cmd_begin_rendering(
+            RenderPass{
+                .color = {},
+                .depth = { .load_op = LoadOp::Clear, .store_op = StoreOp::Store, .clear_depth = 0.0F },
+                .stencil = {},
+                .layer_count = 1,
+                .view_mask = 0,
+            },
+            Framebuffer{
+                .color = {},
+                .depth_stencil = { .texture = *depth_msaa },
+                .debug_name = "Predepth FB",
+            },
+            {});
+        buf.cmd_bind_graphics_pipeline(*static_opaque_prepass_handle);
+        buf.cmd_bind_depth_state({
+            .compare_operation = CompareOp::Greater,
+            .is_depth_write_enabled = true,
+        });
+      buf.cmd_push_constants<PC>(pc, 0);
+
+        buf.cmd_bind_vertex_buffer(0, duck_mesh.get_shadow_vertex_buffer(), 0);
+        auto&& [count, offset] = duck_mesh.get_shadow_index_binding_data(shadow_lod_choice);
+        buf.cmd_bind_index_buffer(
+            duck_mesh.get_shadow_index_buffer(), IndexFormat::UI32, offset * sizeof(std::uint32_t));
+        buf.cmd_draw_indexed(count, 1, 0, 0, 0);
+        buf.cmd_end_rendering();
+
+    // ---------------- PASS 1: OFFSCREEN GEOMETRY (MSAA -> resolve)
+    // ----------------
+    RenderPass gbuffer_pass {
+            .color= {
+                RenderPass::AttachmentDescription{
+                    .load_op = LoadOp::Clear,
+                    .store_op = StoreOp::MsaaResolve,
+                    .clear_colour = std::array{0.1F, 0.1F, 0.1F, 1.0F},
+                },
+            },
+            .depth ={ .load_op = LoadOp::Load, .store_op = StoreOp::DontCare, },
+            .stencil = {},
+            .layer_count = 1,
+            .view_mask = 0,
+        };
+
+    // Framebuffer: render into color_msaa, resolve into color_resolved
+    Framebuffer gbuffer_fb{
+            .color = {
+                Framebuffer::AttachmentDescription{
+                    .texture = *color_msaa,
+                    .resolve_texture = *color_resolved,
+                },
+            },
+            .depth_stencil = { .texture = *depth_msaa },
+            .debug_name = "GBuffer (MSAA + Resolve)",
+        };
+
+    buf.cmd_begin_rendering(gbuffer_pass, gbuffer_fb, {});
 
     buf.cmd_bind_graphics_pipeline(*static_opaque_geometry_pipeline_handle);
     buf.cmd_push_constants<PC>(pc, 0);
     buf.cmd_bind_depth_state({
-      .compare_operation = CompareOp::Greater,
-      .is_depth_write_enabled = true,
+      .compare_operation = CompareOp::GreaterEqual,
+      .is_depth_test_enabled = true,
+      .is_depth_write_enabled = false,
     });
     buf.cmd_bind_vertex_buffer(0, duck_mesh.get_vertex_buffer(), 0);
-    auto&& [count, offset] = duck_mesh.get_index_binding_data(0);
+    auto&& [dcount, doffset] = duck_mesh.get_index_binding_data(lod_choice);
     buf.cmd_bind_index_buffer(
-      duck_mesh.get_index_buffer(), IndexFormat::UI32, offset);
-    /*
-    buf.cmd_draw_indexed(count, 1, 0, 0, 0);
-*/
+      duck_mesh.get_index_buffer(), IndexFormat::UI32, doffset * sizeof(std::uint32_t));
+
+    buf.cmd_draw_indexed(dcount, 1, 0, 0, 0);
+
     // End offscreen pass
     buf.cmd_end_rendering();
 
@@ -837,8 +863,15 @@ main() -> std::int32_t
                        180.0F,
                        "%.1f",
                        ImGuiSliderFlags_AlwaysClamp);
-    ImGui::ShowDemoWindow();
-    ImPlot::ShowDemoWindow();
+
+    // Lod choice 0->4 inclusive
+    auto max = duck_mesh.get_mesh_data().lod_levels.size();
+        ImGui::SliderInt("Duck LOD", &lod_choice, 0, static_cast<std::int32_t>(max) - 1);
+    auto max_shadow = duck_mesh.get_mesh_data().shadow_lod_levels.size();
+        ImGui::SliderInt("Duck Shadow LOD", &shadow_lod_choice, 0, static_cast<std::int32_t>(max_shadow) - 1);
+
+    //ImGui::ShowDemoWindow();
+    //ImPlot::ShowDemoWindow();
     ImGui::End();
 
     // Bind post pipeline and sample the resolved texture by index using push
@@ -865,6 +898,12 @@ main() -> std::int32_t
     const auto result = vulkan_context->submit(buf, swapchain_texture);
     (void)result; // handle errors as needed
   }
+}
+
+auto
+main() -> std::int32_t
+{
+  run_main();
 
   return 0;
 }

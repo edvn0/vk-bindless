@@ -160,6 +160,10 @@ ImGuiRenderer::end_frame(ICommandBuffer& command_buffer)
     drawable.allocated_vertices = dd->TotalVtxCount;
   }
 
+  if (drawable.allocated_vertices == 0 || drawable.allocated_indices == 0) {
+    return;
+  }
+
   auto vtx = context->get_mapped_pointer<ImDrawVert>(*drawable.vertex_buffer);
   auto idx = context->get_mapped_pointer<uint16_t>(*drawable.index_buffer);
   for (int n = 0; n < dd->CmdListsCount; n++) {

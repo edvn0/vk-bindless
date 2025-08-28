@@ -32,6 +32,11 @@ public:
   {
     return camera_behaviour->get_position();
   }
+
+  [[nodiscard]] auto get_behaviour() const -> CameraBehaviour*
+  {
+    return camera_behaviour.get();
+  }
 };
 
 struct FirstPersonCameraBehaviour final:CameraBehaviour
