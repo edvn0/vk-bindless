@@ -14,6 +14,13 @@ struct aiScene;
 
 namespace VkBindless {
 
+struct Material
+{
+  static constexpr std::uint32_t white_texture = 0;
+
+  std::uint32_t albedo_texture{ white_texture };
+};
+
 struct Vertex
 {
   glm::vec3 position;
@@ -40,6 +47,8 @@ struct MeshData
   std::vector<std::uint32_t> indices;
   std::vector<LodInfo> lod_levels;
   std::vector<LodInfo> shadow_lod_levels; // Multiple shadow LOD levels
+
+  std::vector<Material> material{};
 };
 
 class LodGenerator
@@ -94,7 +103,7 @@ public:
 
 private:
   // Internal methods that work with assimp (hidden in implementation)
-  auto process_assimp_mesh(const aiMesh* ai_mesh) -> MeshData;
+  auto process_assimp_mesh(const aiScene*, const aiMesh*) -> MeshData;
 };
 
 class Mesh
@@ -123,7 +132,8 @@ public:
     auto& data = mesh_data.lod_levels.at(lod_index);
     return std::make_pair(data.index_count, data.index_offset);
   }
-  [[nodiscard]] auto get_shadow_index_binding_data(const std::size_t lod_index) const
+  [[nodiscard]] auto get_shadow_index_binding_data(
+    const std::size_t lod_index) const
   {
     auto& data = mesh_data.shadow_lod_levels.at(lod_index);
     return std::make_pair(data.index_count, data.index_offset);

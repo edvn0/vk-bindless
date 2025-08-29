@@ -4,6 +4,7 @@
 #include "vk-bindless/event_system.hpp"
 #include "vk-bindless/graphics_context.hpp"
 #include "vk-bindless/mesh.hpp"
+#include "vk-bindless/pipeline.hpp"
 #include "vk-bindless/scope_exit.hpp"
 #include "vk-bindless/shader.hpp"
 #include "vk-bindless/transitions.hpp"
@@ -131,20 +132,7 @@ public:
   [[nodiscard]] auto get_priority() const -> int override { return 100; }
 
 protected:
-  bool handle_event(const EventSystem::KeyEvent& event) override
-  {
-    if (event.action == GLFW_PRESS) {
-      if (event.key == GLFW_KEY_W) {
-        std::cout << "Move forward\n";
-        return false;
-      }
-      if (event.key == GLFW_KEY_SPACE) {
-        std::cout << "Jump action\n";
-        return true;
-      }
-    }
-    return false;
-  }
+  bool handle_event(const EventSystem::KeyEvent&) override { return false; }
   bool handle_event(const EventSystem::MouseButtonEvent& event) override
   {
     if (event.action == GLFW_PRESS && event.button == GLFW_MOUSE_BUTTON_LEFT) {
@@ -286,7 +274,7 @@ struct FrameUniform
       throw std::runtime_error(
         "FrameUniform data must be a non-zero multiple of 16 bytes");
     }
-    FrameUniform  uniform;
+    FrameUniform uniform;
     const VkBindless::BufferDescription desc{
       .data = data,
       .size = size,
@@ -307,8 +295,7 @@ struct FrameUniform
     upload(context, std::as_bytes(data));
   }
   template<typename T>
-auto upload(VkBindless::IContext& context, const std::span<T> data)
-  -> void
+  auto upload(VkBindless::IContext& context, const std::span<T> data) -> void
   {
     upload(context, std::as_bytes(data));
   }
@@ -394,7 +381,25 @@ as_null(K* k = VK_NULL_HANDLE) -> decltype(k)
   return static_cast<decltype(k)>(VK_NULL_HANDLE);
 }
 
-auto run_main() -> void
+void
+draw_compact_wasd_qe_widget()
+{
+  ImGui::Begin("Compact WASD+QE");
+
+  // Simple text-based display
+  ImGui::Text("Keys: %s%s%s%s%s%s",
+              ImGui::IsKeyDown(ImGuiKey_W) ? "[W]" : "W",
+              ImGui::IsKeyDown(ImGuiKey_A) ? "[A]" : "A",
+              ImGui::IsKeyDown(ImGuiKey_S) ? "[S]" : "S",
+              ImGui::IsKeyDown(ImGuiKey_D) ? "[D]" : "D",
+              ImGui::IsKeyDown(ImGuiKey_Q) ? "[Q]" : "Q",
+              ImGui::IsKeyDown(ImGuiKey_E) ? "[E]" : "E");
+
+  ImGui::End();
+}
+
+auto
+run_main() -> void
 {
   using namespace VkBindless;
   using GLFWPointer = std::unique_ptr<GLFWwindow, decltype(&destroy_glfw)>;
@@ -462,12 +467,14 @@ auto run_main() -> void
   const auto game_handler = std::make_shared<GameLogicHandler>();
   const auto ui_handler = std::make_shared<UIHandler>();
 
-    Camera camera(std::make_unique<FirstPersonCameraBehaviour>(
-      glm::vec3{ 0, 2.0F, -3.0F }, glm::vec3{ 0, 0, 0.0F }, glm::vec3{ 0, 1, 0 }));
+  Camera camera(
+    std::make_unique<FirstPersonCameraBehaviour>(glm::vec3{ 0, 2.0F, -3.0F },
+                                                 glm::vec3{ 0, 0, 0.0F },
+                                                 glm::vec3{ 0, 1, 0 }));
 
-  const auto camera_input =
-    std::make_shared<CameraInputHandler>(window.get(), dynamic_cast<FirstPersonCameraBehaviour*>(
-        camera.get_behaviour()));
+  const auto camera_input = std::make_shared<CameraInputHandler>(
+    window.get(),
+    dynamic_cast<FirstPersonCameraBehaviour*>(camera.get_behaviour()));
 
   event_dispatcher.subscribe<EventSystem::KeyEvent,
                              EventSystem::MouseMoveEvent,
@@ -486,15 +493,14 @@ auto run_main() -> void
   auto opaque_geometry = VkShader::create(
     vulkan_context.get(), "assets/shaders/opaque_geometry.shader");
 
-  auto prepass = VkShader::create(
-    vulkan_context.get(), "assets/shaders/prepass.shader");
+  auto prepass =
+    VkShader::create(vulkan_context.get(), "assets/shaders/prepass.shader");
 
   // MSAA sample count
   constexpr VkSampleCountFlagBits kMsaa = VK_SAMPLE_COUNT_4_BIT;
 
-  VertexInput static_opaque_geometry_vertex_input = VertexInput::create({VertexFormat::Float3,
-                                                                      VertexFormat::Float3,
-                                                                      VertexFormat::Float2});
+  VertexInput static_opaque_geometry_vertex_input = VertexInput::create(
+    { VertexFormat::Float3, VertexFormat::Float3, VertexFormat::Float2 });
   auto static_opaque_geometry_pipeline_handle = VkGraphicsPipeline::create(
     vulkan_context.get(),
     {
@@ -508,15 +514,17 @@ auto run_main() -> void
     });
 
   auto static_opaque_prepass_handle = VkGraphicsPipeline::create(
-  vulkan_context.get(),
-  {
-    .vertex_input = VertexInput::create({VertexFormat::Float3,}),
-    .shader = *prepass,
-    .depth_format = Format::Z_F32,
-    .cull_mode = CullMode::Back,
-    .sample_count = kMsaa, // ensure pipeline is compatible with MSAA target
-    .debug_name = "Static Opaque Prepass Pipeline",
-  });
+    vulkan_context.get(),
+    {
+      .vertex_input = VertexInput::create({
+        VertexFormat::Float3,
+      }),
+      .shader = *prepass,
+      .depth_format = Format::Z_F32,
+      .cull_mode = CullMode::Front,
+      .sample_count = kMsaa, // ensure pipeline is compatible with MSAA target
+      .debug_name = "Static Opaque Prepass Pipeline",
+    });
 
   // Offscreen textures: MSAA color, resolved single-sample color, MSAA depth
   auto null_k_bytes = [](auto k = 0) {
@@ -652,11 +660,26 @@ auto run_main() -> void
       .debug_name = "Post Pipeline",
     });
 
+  auto grid_shader =
+    VkShader::create(vulkan_context.get(), "assets/shaders/grid.shader");
+
+  auto grid_pipeline = VkGraphicsPipeline::create(
+    vulkan_context.get(),
+    {
+      .shader = *grid_shader,
+      .color = { ColourAttachment{
+        .format = Format::RGBA_F32,
+        .blend_enabled = true,
+        .src_rgb_blend_factor = BlendFactor::SrcAlpha,
+        .dst_rgb_blend_factor = BlendFactor::OneMinusSrcAlpha,
+      } },
+      .depth_format = Format::Z_F32,
+      .sample_count = kMsaa,
+      .debug_name = "Grid Pipeline",
+    });
 
   double last_time = glfwGetTime();
 
-  // Helper to check swapchain size changes and recreate offscreen targets if
-  // needed
   auto ensure_size = [&](int w, int h) {
     if (w <= 0 || h <= 0)
       return;
@@ -723,36 +746,37 @@ auto run_main() -> void
 
     // Acquire command buffer
     auto& buf = vulkan_context->acquire_command_buffer();
-/*
-    // PASS 0: Predepth
-        buf.cmd_begin_rendering(
-            RenderPass{
-                .color = {},
-                .depth = { .load_op = LoadOp::Clear, .store_op = StoreOp::Store, .clear_depth = 0.0F },
-                .stencil = {},
-                .layer_count = 1,
-                .view_mask = 0,
-            },
-            Framebuffer{
-                .color = {},
-                .depth_stencil = { .texture = *depth_msaa },
-                .debug_name = "Predepth FB",
-            },
-            {});
-        buf.cmd_bind_graphics_pipeline(*static_opaque_prepass_handle);
-        buf.cmd_bind_depth_state({
-            .compare_operation = CompareOp::Greater,
-            .is_depth_write_enabled = true,
-        });
-      buf.cmd_push_constants<PC>(pc, 0);
 
-        buf.cmd_bind_vertex_buffer(0, duck_mesh.get_shadow_vertex_buffer(), 0);
-        auto&& [count, offset] = duck_mesh.get_shadow_index_binding_data(shadow_lod_choice);
-        buf.cmd_bind_index_buffer(
-            duck_mesh.get_shadow_index_buffer(), IndexFormat::UI32, offset * sizeof(std::uint32_t));
-        buf.cmd_draw_indexed(count, 1, 0, 0, 0);
-        buf.cmd_end_rendering();
-        */
+    /*
+        // PASS 0: Predepth
+            buf.cmd_begin_rendering(
+                RenderPass{
+                    .color = {},
+                    .depth = { .load_op = LoadOp::Clear, .store_op =
+       StoreOp::Store, .clear_depth = 0.0F }, .stencil = {}, .layer_count = 1,
+                    .view_mask = 0,
+                },
+                Framebuffer{
+                    .color = {},
+                    .depth_stencil = { .texture = *depth_msaa },
+                    .debug_name = "Predepth FB",
+                },
+                {});
+            buf.cmd_bind_graphics_pipeline(*static_opaque_prepass_handle);
+            buf.cmd_bind_depth_state({
+                .compare_operation = CompareOp::Greater,
+                .is_depth_write_enabled = true,
+            });
+          buf.cmd_push_constants<PC>(pc, 0);
+
+            buf.cmd_bind_vertex_buffer(0, duck_mesh.get_shadow_vertex_buffer(),
+       0); auto&& [count, offset] =
+       duck_mesh.get_shadow_index_binding_data(shadow_lod_choice);
+            buf.cmd_bind_index_buffer(
+                duck_mesh.get_shadow_index_buffer(), IndexFormat::UI32, offset *
+       sizeof(std::uint32_t)); buf.cmd_draw_indexed(count, 1, 0, 0, 0);
+            buf.cmd_end_rendering();
+            */
 
     // ---------------- PASS 1: OFFSCREEN GEOMETRY (MSAA -> resolve)
     // ----------------
@@ -784,6 +808,29 @@ auto run_main() -> void
 
     buf.cmd_begin_rendering(gbuffer_pass, gbuffer_fb, {});
 
+    {
+      buf.cmd_bind_graphics_pipeline(*grid_pipeline);
+      buf.cmd_bind_depth_state({});
+      struct GridPC
+      {
+        std::uint64_t ubo_address; // matches UBO pc
+        std::uint64_t padding{ 0 };
+        alignas(16) glm::vec4 origin;
+        alignas(16) glm::vec4 grid_colour_thin;
+        alignas(16) glm::vec4 grid_colour_thick;
+        alignas(16) glm::vec4 grid_params;
+      };
+      GridPC grid_pc{
+        .ubo_address = main_ubo.get_address(*vulkan_context),
+        .origin = glm::vec4{ 0.0f },
+        .grid_colour_thin = glm::vec4{ 0.5f, 0.5f, 0.5f, 1.0f },
+        .grid_colour_thick = glm::vec4{ 0.15f, 0.15f, 0.15f, 1.0f },
+        .grid_params = glm::vec4{ 100.0f, 0.025f, 2.0f, 0.0f },
+      };
+      buf.cmd_push_constants<GridPC>(grid_pc, 0);
+      buf.cmd_draw(6, 1, 0, 0);
+    }
+
     buf.cmd_bind_graphics_pipeline(*static_opaque_geometry_pipeline_handle);
     buf.cmd_push_constants<PC>(pc, 0);
     buf.cmd_bind_depth_state({
@@ -793,8 +840,9 @@ auto run_main() -> void
     });
     buf.cmd_bind_vertex_buffer(0, duck_mesh.get_vertex_buffer(), 0);
     auto&& [dcount, doffset] = duck_mesh.get_index_binding_data(lod_choice);
-    buf.cmd_bind_index_buffer(
-      duck_mesh.get_index_buffer(), IndexFormat::UI32, doffset * sizeof(std::uint32_t));
+    buf.cmd_bind_index_buffer(duck_mesh.get_index_buffer(),
+                              IndexFormat::UI32,
+                              doffset * sizeof(std::uint32_t));
 
     buf.cmd_draw_indexed(dcount, 1, 0, 0, 0);
 
@@ -827,16 +875,13 @@ auto run_main() -> void
       .debug_name = "Present FB",
     };
 
-    buf.cmd_begin_rendering(present_pass,
-                            present_fb,
-                            {
-                              //.textures = { *color_msaa, *color_resolved, },
-                            });
+    buf.cmd_begin_rendering(present_pass, present_fb, {});
 
     // Begin ImGui for present pass
     imgui->begin_frame(present_fb);
     ImGui::Begin("Texture Viewer");
     ImGui::Image(ImTextureID{ 0 }, ImVec2(512, 512));
+    draw_compact_wasd_qe_widget();
     ImGui::SliderAngle("Light Direction (phi)",
                        &rad_phi,
                        0.0F,
@@ -852,12 +897,16 @@ auto run_main() -> void
 
     // Lod choice 0->4 inclusive
     auto max = duck_mesh.get_mesh_data().lod_levels.size();
-        ImGui::SliderInt("Duck LOD", &lod_choice, 0, static_cast<std::int32_t>(max) - 1);
+    ImGui::SliderInt(
+      "Duck LOD", &lod_choice, 0, static_cast<std::int32_t>(max) - 1);
     auto max_shadow = duck_mesh.get_mesh_data().shadow_lod_levels.size();
-        ImGui::SliderInt("Duck Shadow LOD", &shadow_lod_choice, 0, static_cast<std::int32_t>(max_shadow) - 1);
+    ImGui::SliderInt("Duck Shadow LOD",
+                     &shadow_lod_choice,
+                     0,
+                     static_cast<std::int32_t>(max_shadow) - 1);
 
-    //ImGui::ShowDemoWindow();
-    //ImPlot::ShowDemoWindow();
+    // ImGui::ShowDemoWindow();
+    // ImPlot::ShowDemoWindow();
     ImGui::End();
 
     // Bind post pipeline and sample the resolved texture by index using push

@@ -74,13 +74,10 @@ LodGenerator::load_model(const std::string_view filename)
   Assimp::Importer importer;
   const aiScene* scene = importer.ReadFile(
     std::string{ filename },
-    aiProcess_Triangulate |
-aiProcess_JoinIdenticalVertices |
-aiProcess_GenNormals |
-aiProcess_CalcTangentSpace |
-aiProcess_ImproveCacheLocality |
-aiProcess_OptimizeMeshes |
-aiProcess_PreTransformVertices);
+    aiProcess_Triangulate | aiProcess_JoinIdenticalVertices |
+      aiProcess_GenNormals | aiProcess_CalcTangentSpace |
+      aiProcess_ImproveCacheLocality | aiProcess_OptimizeMeshes |
+      aiProcess_PreTransformVertices);
 
   if (!scene || !scene->mRootNode ||
       scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) {
@@ -88,8 +85,8 @@ aiProcess_PreTransformVertices);
   }
 
   auto meta_data = scene->mMetaData;
-  auto keys = std::span{meta_data->mKeys, meta_data->mNumProperties};
-  auto values = std::span{meta_data->mValues, meta_data->mNumProperties};
+  auto keys = std::span{ meta_data->mKeys, meta_data->mNumProperties };
+  auto values = std::span{ meta_data->mValues, meta_data->mNumProperties };
   for (std::size_t i = 0; i < keys.size(); ++i) {
     auto to_string = [](const aiString& str) {
       return std::string_view{ str.C_Str(), str.length };
@@ -101,14 +98,15 @@ aiProcess_PreTransformVertices);
   meshes.reserve(scene->mNumMeshes);
 
   for (unsigned int i = 0; i < scene->mNumMeshes; i++) {
-    meshes.push_back(process_assimp_mesh(scene->mMeshes[i]));
+    meshes.push_back(process_assimp_mesh(scene, scene->mMeshes[i]));
   }
 
   return meshes;
 }
 
 auto
-LodGenerator::process_assimp_mesh(const aiMesh* ai_mesh) -> MeshData
+LodGenerator::process_assimp_mesh(const aiScene* scene, const aiMesh* ai_mesh)
+  -> MeshData
 {
   MeshData mesh;
 
@@ -127,6 +125,38 @@ LodGenerator::process_assimp_mesh(const aiMesh* ai_mesh) -> MeshData
 
   // Generate shadow indices
   pimpl->generate_shadow_lods(mesh.shadow_vertices, original_indices, mesh);
+
+  if (ai_mesh->mMaterialIndex >= 0) {
+    if (mesh.material.size() < ai_mesh->mMaterialIndex) {
+      mesh.material.resize(ai_mesh->mMaterialIndex + 1);
+    }
+
+    aiMaterial* ai_mat = scene->mMaterials[ai_mesh->mMaterialIndex];
+
+    constexpr auto base_dir = "assets/meshes";
+
+    aiString tex_path;
+    if (ai_mat->GetTexture(aiTextureType_DIFFUSE, 0, &tex_path) == AI_SUCCESS) {
+      // Convert Assimp path to your engine’s texture loader
+      std::filesystem::path full_path =
+        std::filesystem::path{ base_dir } / tex_path.C_Str();
+
+      // TODO: replace with your actual VkTexture::create wrapper
+      auto tex_handle = VkTexture::create(
+        context,
+        VkTextureDescription{
+          .data = load_file_binary(full_path), // You’ll need a file loader here
+          .format = vk_format_to_format(VK_FORMAT_R8G8B8A8_UNORM),
+          .usage_flags = TextureUsageFlags::Sampled,
+          .debug_name = full_path.filename().string() });
+
+      mesh.material.at(ai_mesh->mMaterialIndex).albedo_texture =
+        tex_handle.index(); // store bindless handle
+    } else {
+      mesh.material.at(ai_mesh->mMaterialIndex).albedo_texture =
+        Material::white_texture; // fallback
+    }
+  }
 
   return mesh;
 }
@@ -182,10 +212,11 @@ LodGenerator::Impl::extract_vertices_from_assimp(
     ai_mesh->HasNormals()
       ? std::span<const aiVector3D>(ai_mesh->mNormals, ai_mesh->mNumVertices)
       : std::span<const aiVector3D>();
-  const auto texcoords = ai_mesh->HasTextureCoords(0)
-                     ? std::span<const aiVector3D>(ai_mesh->mTextureCoords[0],
-                                                   ai_mesh->mNumVertices)
-                     : std::span<const aiVector3D>();
+  const auto texcoords =
+    ai_mesh->HasTextureCoords(0)
+      ? std::span<const aiVector3D>(ai_mesh->mTextureCoords[0],
+                                    ai_mesh->mNumVertices)
+      : std::span<const aiVector3D>();
 
   vertices.reserve(ai_mesh->mNumVertices);
 
@@ -212,7 +243,8 @@ LodGenerator::Impl::extract_vertices_from_assimp(
     vertices.push_back(v);
   }
 
-  shadow_vertices = vertices | std::views::transform([](const Vertex& v) -> ShadowVertex {
+  shadow_vertices = vertices |
+                    std::views::transform([](const Vertex& v) -> ShadowVertex {
                       return { v.position };
                     }) |
                     std::ranges::to<std::vector<ShadowVertex>>();

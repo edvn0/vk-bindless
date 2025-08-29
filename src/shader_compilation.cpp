@@ -1,9 +1,97 @@
 #include "vk-bindless/shader_compilation.hpp"
 #include "vk-bindless/scope_exit.hpp"
+#include <filesystem>
+#include <fstream>
 #include <glslang/Include/glslang_c_interface.h>
 #include <iostream>
 
 namespace VkBindless {
+
+namespace {
+// Context structure to manage include result lifetimes
+struct IncludeContext
+{
+  std::unordered_map<void*, std::unique_ptr<glsl_include_result_t>> results;
+  std::unordered_map<void*, std::string> header_names;
+  std::unordered_map<void*, std::string> contents;
+};
+
+auto
+read_file_to_string(const std::filesystem::path& file_path) -> std::string
+{
+  std::ifstream file(file_path, std::ios::binary);
+  if (!file) {
+    return {};
+  }
+
+  std::ostringstream contents;
+  contents << file.rdbuf();
+  return contents.str();
+}
+
+// Callback for system includes: #include <file.glsl>
+auto
+include_system_callback(void* ctx, const char* header_name, const char*, size_t)
+  -> glsl_include_result_t*
+{
+  auto* context = static_cast<IncludeContext*>(ctx);
+
+  // Resolve system includes from assets/shaders/include/
+  std::filesystem::path include_path = "assets/shaders/include";
+  std::filesystem::path full_path = include_path / header_name;
+
+  std::string content = read_file_to_string(full_path);
+  if (content.empty()) {
+    return nullptr; // File not found or empty
+  }
+
+  auto result = std::make_unique<glsl_include_result_t>();
+  std::string header_name_str(header_name);
+
+  void* result_ptr = result.get();
+  context->header_names[result_ptr] = std::move(header_name_str);
+  context->contents[result_ptr] = std::move(content);
+
+  result->header_name = context->header_names[result_ptr].c_str();
+  result->header_data = context->contents[result_ptr].c_str();
+  result->header_length = context->contents[result_ptr].length();
+
+  glsl_include_result_t* result_raw = result.release();
+  context->results[result_raw] =
+    std::unique_ptr<glsl_include_result_t>(result_raw);
+
+  return result_raw;
+}
+
+auto
+include_local_callback(void* ctx,
+                       const char* header_name,
+                       const char* includer_name,
+                       size_t include_depth) -> glsl_include_result_t*
+{
+  // You could modify this to be relative to the includer_name if needed
+  return include_system_callback(
+    ctx, header_name, includer_name, include_depth);
+}
+
+// Callback to free include result
+auto
+free_include_result_callback(void* ctx, glsl_include_result_t* result)
+{
+  if (!result || !ctx) {
+    return 0;
+  }
+
+  auto* context = static_cast<IncludeContext*>(ctx);
+
+  // Clean up the stored strings and result
+  context->header_names.erase(result);
+  context->contents.erase(result);
+  context->results.erase(result);
+
+  return 1; // Success
+}
+}
 
 auto
 parse_shader_stage(std::string_view stage_str)
@@ -21,6 +109,10 @@ parse_shader_stage(std::string_view stage_str)
     return ShaderStage::tessellation_evaluation;
   if (stage_str == "compute")
     return ShaderStage::compute;
+  if (stage_str == "task")
+    return ShaderStage::task;
+  if (stage_str == "mesh")
+    return ShaderStage::mesh;
 
   return std::unexpected(ParseError::unknown_shader_stage);
 }
@@ -41,6 +133,10 @@ to_string(ShaderStage stage) -> std::string
       return "tessellation_evaluation";
     case ShaderStage::compute:
       return "compute";
+    case ShaderStage::task:
+      return "task";
+    case ShaderStage::mesh:
+      return "mesh";
   }
   return "unknown";
 }
@@ -52,6 +148,15 @@ compile_shader(glslang_stage_t stage,
                const glslang_resource_t* resources)
   -> std::expected<void, std::string>
 {
+  IncludeContext include_ctx;
+
+  // Setup include callbacks
+  static glsl_include_callbacks_t include_callbacks = {
+    .include_system = include_system_callback,
+    .include_local = include_local_callback,
+    .free_include_result = free_include_result_callback
+  };
+
   const glslang_input_t input = {
     .language = GLSLANG_SOURCE_GLSL,
     .stage = stage,
@@ -66,8 +171,8 @@ compile_shader(glslang_stage_t stage,
     .forward_compatible = false,
     .messages = GLSLANG_MSG_DEFAULT_BIT,
     .resource = resources,
-    .callbacks = {},
-    .callbacks_ctx = nullptr,
+    .callbacks = include_callbacks,
+    .callbacks_ctx = &include_ctx, // Pass our context
   };
 
   glslang_shader_t* shader = glslang_shader_create(&input);
@@ -174,6 +279,7 @@ ShaderParser::prepend_preamble(ParsedShader& parsed) -> bool
       constexpr auto append =
         R"(
       #version 460
+      #extension GL_GOOGLE_include_directive : require
       #extension GL_EXT_buffer_reference : require
       #extension GL_EXT_buffer_reference_uvec2 : require
       #extension GL_EXT_debug_printf : enable
@@ -189,6 +295,7 @@ ShaderParser::prepend_preamble(ParsedShader& parsed) -> bool
       constexpr auto append =
         R"(
       #version 460
+      #extension GL_GOOGLE_include_directive : require
       #extension GL_EXT_buffer_reference : require
       #extension GL_EXT_buffer_reference_uvec2 : require
       #extension GL_EXT_debug_printf : enable
@@ -201,6 +308,7 @@ ShaderParser::prepend_preamble(ParsedShader& parsed) -> bool
       constexpr auto append =
         R"(
       #version 460
+      #extension GL_GOOGLE_include_directive : require
       #extension GL_EXT_buffer_reference_uvec2 : require
       #extension GL_EXT_debug_printf : enable
       #extension GL_EXT_nonuniform_qualifier : require

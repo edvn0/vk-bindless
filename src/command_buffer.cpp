@@ -227,7 +227,7 @@ CommandBuffer::cmd_begin_rendering(const RenderPass& render_pass,
       .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
       .loadOp = load_op_to_vk_attachment_load_op(desc_color.load_op),
       .storeOp = store_op_to_vk_attachment_store_op(desc_color.store_op),
-      .clearValue = { .color = { .float32 = { 0, 1, 0, 0 } } },
+      .clearValue = { .color = { .float32 = { 0, 0, 0, 0 } } },
     };
     set_clear_colour(colour_attachments.at(i).clearValue.color,
                      desc_color.clear_colour);

@@ -495,7 +495,7 @@ auto
 Context::create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
   -> Expected<std::unique_ptr<IContext>, ContextError>
 {
-#if IS_DEBUG
+#if !IS_RELEASE
   constexpr auto request_validation = true;
 #else
   constexpr auto request_validation = true;

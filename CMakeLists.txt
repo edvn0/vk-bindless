@@ -70,7 +70,9 @@ target_include_directories(${PROJECT_NAME}
     PUBLIC ${Vulkan_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/third-party/vk-bootstrap/src
 )
 target_compile_definitions(${PROJECT_NAME}
-    PRIVATE $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:IS_DEBUG>
+    PRIVATE 
+    $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:IS_DEBUG> 
+    $<$<CONFIG:Release>:IS_RELEASE>
 )
 
 
