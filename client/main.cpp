@@ -316,7 +316,7 @@ auto upload(VkBindless::IContext& context, const std::span<T> data)
   auto upload(VkBindless::IContext& context,
               const std::span<const std::byte> data) -> void
   {
-    auto index = context.get_swapchain().current_frame_index() % Count;
+    auto index = context.get_frame_index() % Count;
     auto handle = *buffers[index];
     auto* ptr = context.get_mapped_pointer(handle);
     if (!ptr) {
@@ -463,7 +463,7 @@ auto run_main() -> void
   const auto ui_handler = std::make_shared<UIHandler>();
 
     Camera camera(std::make_unique<FirstPersonCameraBehaviour>(
-      glm::vec3{ 0, 140, -200.F }, glm::vec3{ 0, 0, 0.0F }, glm::vec3{ 0, 1, 0 }));
+      glm::vec3{ 0, 2.0F, -3.0F }, glm::vec3{ 0, 0, 0.0F }, glm::vec3{ 0, 1, 0 }));
 
   const auto camera_input =
     std::make_shared<CameraInputHandler>(window.get(), dynamic_cast<FirstPersonCameraBehaviour*>(
@@ -483,10 +483,6 @@ auto run_main() -> void
   std::int32_t new_width = 0;
   std::int32_t new_height = 0;
 
-  // Create shaders & pipelines
-  auto shader =
-    VkShader::create(vulkan_context.get(), "assets/shaders/cube.shader");
-
   auto opaque_geometry = VkShader::create(
     vulkan_context.get(), "assets/shaders/opaque_geometry.shader");
 
@@ -496,17 +492,6 @@ auto run_main() -> void
   // MSAA sample count
   constexpr VkSampleCountFlagBits kMsaa = VK_SAMPLE_COUNT_4_BIT;
 
-  // Create cube pipeline with MSAA (if your wrapper supports sample_count flag)
-  auto cube_pipeline_handle = VkGraphicsPipeline::create(
-    vulkan_context.get(),
-    {
-      .shader = *shader,
-      .color = { ColourAttachment{ .format = Format::R_F32 } },
-      .depth_format = Format::Z_F32,
-      .sample_count = kMsaa, // ensure pipeline is compatible with MSAA target
-      .debug_name = "Cube Pipeline",
-    });
-
   VertexInput static_opaque_geometry_vertex_input = VertexInput::create({VertexFormat::Float3,
                                                                       VertexFormat::Float3,
                                                                       VertexFormat::Float2});
@@ -515,9 +500,9 @@ auto run_main() -> void
     {
       .vertex_input = static_opaque_geometry_vertex_input,
       .shader = *opaque_geometry,
-      .color = { ColourAttachment{ .format = Format::R_F32 } },
+      .color = { ColourAttachment{ .format = Format::RGBA_F32 } },
       .depth_format = Format::Z_F32,
-      .cull_mode = CullMode::Back,
+      .cull_mode = CullMode::Front,
       .sample_count = kMsaa, // ensure pipeline is compatible with MSAA target
       .debug_name = "Static Opaque Pipeline",
     });
@@ -588,7 +573,7 @@ auto run_main() -> void
       VkTexture::create(*vulkan_context,
                         {
                           .data = {},
-                          .format = Format::R_F32,
+                          .format = Format::RGBA_F32,
                           .extent = { .width = offscreen_extent.width,
                                       .height = offscreen_extent.height,
                                       .depth = 1 },
@@ -609,7 +594,7 @@ auto run_main() -> void
       VkTexture::create(*vulkan_context,
                         {
                           .data = {},
-                          .format = Format::R_F32,
+                          .format = Format::RGBA_F32,
                           .extent = { .width = offscreen_extent.width,
                                       .height = offscreen_extent.height,
                                       .depth = 1 },
@@ -738,7 +723,7 @@ auto run_main() -> void
 
     // Acquire command buffer
     auto& buf = vulkan_context->acquire_command_buffer();
-
+/*
     // PASS 0: Predepth
         buf.cmd_begin_rendering(
             RenderPass{
@@ -767,6 +752,7 @@ auto run_main() -> void
             duck_mesh.get_shadow_index_buffer(), IndexFormat::UI32, offset * sizeof(std::uint32_t));
         buf.cmd_draw_indexed(count, 1, 0, 0, 0);
         buf.cmd_end_rendering();
+        */
 
     // ---------------- PASS 1: OFFSCREEN GEOMETRY (MSAA -> resolve)
     // ----------------
@@ -778,7 +764,7 @@ auto run_main() -> void
                     .clear_colour = std::array{0.1F, 0.1F, 0.1F, 1.0F},
                 },
             },
-            .depth ={ .load_op = LoadOp::Load, .store_op = StoreOp::DontCare, },
+            .depth ={ .load_op = LoadOp::Clear, .store_op = StoreOp::DontCare, .clear_depth = 0.0F },
             .stencil = {},
             .layer_count = 1,
             .view_mask = 0,
@@ -792,7 +778,7 @@ auto run_main() -> void
                     .resolve_texture = *color_resolved,
                 },
             },
-            .depth_stencil = { .texture = *depth_msaa },
+            .depth_stencil = { *depth_msaa },
             .debug_name = "GBuffer (MSAA + Resolve)",
         };
 
@@ -801,9 +787,9 @@ auto run_main() -> void
     buf.cmd_bind_graphics_pipeline(*static_opaque_geometry_pipeline_handle);
     buf.cmd_push_constants<PC>(pc, 0);
     buf.cmd_bind_depth_state({
-      .compare_operation = CompareOp::GreaterEqual,
+      .compare_operation = CompareOp::Greater,
       .is_depth_test_enabled = true,
-      .is_depth_write_enabled = false,
+      .is_depth_write_enabled = true,
     });
     buf.cmd_bind_vertex_buffer(0, duck_mesh.get_vertex_buffer(), 0);
     auto&& [dcount, doffset] = duck_mesh.get_index_binding_data(lod_choice);

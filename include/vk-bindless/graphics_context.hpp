@@ -55,7 +55,9 @@ struct IContext
   [[nodiscard]] virtual auto get_queue_family_index_unsafe(Queue queue) const
     -> std::uint32_t = 0;
 
-  virtual auto get_dimensions(TextureHandle handle) const -> Dimensions = 0;
+  [[nodiscard]]virtual auto get_frame_index() const -> std::uint64_t = 0;
+
+  [[nodiscard]]virtual auto get_dimensions(TextureHandle handle) const -> Dimensions = 0;
   virtual auto get_device_address(BufferHandle handle) -> std::uint64_t = 0;
   virtual auto get_mapped_pointer(BufferHandle handle) -> void* = 0;
   template<typename T>

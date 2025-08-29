@@ -71,6 +71,10 @@ public:
     return resource_bindings_updated;
   }
 
+  [[nodiscard]] auto get_frame_index() const -> std::uint64_t override
+  {
+    return swapchain->current_frame_index();
+  }
   auto get_swapchain() -> Swapchain& override { return *swapchain; }
   auto resize_swapchain(std::uint32_t, std::uint32_t) -> void override;
 
