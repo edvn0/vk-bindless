@@ -1,6 +1,9 @@
 #include "vk-bindless/mesh.hpp"
+
 #include "vk-bindless/buffer.hpp"
 #include "vk-bindless/expected.hpp"
+#include "vk-bindless/texture.hpp"
+#include "vk-bindless/vulkan_context.hpp"
 
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
@@ -8,9 +11,54 @@
 #include <filesystem>
 #include <iostream>
 #include <meshoptimizer.h>
+#include <stb_image.h>
 #include <stdexcept>
 
 namespace VkBindless {
+
+namespace {
+struct LoadedImage
+{
+  int width;
+  int height;
+  std::vector<uint8_t> rgba; // 4 channels
+};
+
+auto
+decode_embedded_image(const aiTexture* tex) -> std::optional<LoadedImage>
+{
+  if (!tex)
+    return std::nullopt;
+
+  if (tex->mHeight == 0) {
+    const auto* bytes = reinterpret_cast<const stbi_uc*>(tex->pcData);
+    const int size = static_cast<int>(tex->mWidth);
+    int w = 0, h = 0, comp = 0;
+    if (!stbi_info_from_memory(bytes, size, &w, &h, &comp))
+      return std::nullopt;
+    stbi_uc* data = stbi_load_from_memory(bytes, size, &w, &h, &comp, 4);
+    if (!data)
+      return std::nullopt;
+    LoadedImage img{ w, h, {} };
+    img.rgba.assign(data, data + (w * h * 4));
+    stbi_image_free(data);
+    return img;
+  } else {
+    const int w = static_cast<int>(tex->mWidth);
+    const int h = static_cast<int>(tex->mHeight);
+    LoadedImage img{ w, h, {} };
+    img.rgba.resize(static_cast<size_t>(w) * h * 4);
+    const aiTexel* src = tex->pcData;
+    for (int i = 0; i < w * h; ++i) {
+      img.rgba[4 * i + 0] = src[i].r;
+      img.rgba[4 * i + 1] = src[i].g;
+      img.rgba[4 * i + 2] = src[i].b;
+      img.rgba[4 * i + 3] = src[i].a;
+    }
+    return img;
+  }
+}
+}
 
 struct LodGenerator::Impl
 {
@@ -44,8 +92,9 @@ struct LodGenerator::Impl
 };
 
 // Constructor/Destructor
-LodGenerator::LodGenerator()
+LodGenerator::LodGenerator(IContext& ctx)
   : pimpl(std::make_unique<Impl>())
+  , context(&ctx)
 {
 }
 LodGenerator::~LodGenerator() = default;
@@ -74,24 +123,14 @@ LodGenerator::load_model(const std::string_view filename)
   Assimp::Importer importer;
   const aiScene* scene = importer.ReadFile(
     std::string{ filename },
-    aiProcess_Triangulate | aiProcess_JoinIdenticalVertices |
-      aiProcess_GenNormals | aiProcess_CalcTangentSpace |
-      aiProcess_ImproveCacheLocality | aiProcess_OptimizeMeshes |
-      aiProcess_PreTransformVertices);
+    aiProcess_FlipUVs | aiProcess_Triangulate |
+      aiProcess_JoinIdenticalVertices | aiProcess_GenNormals |
+      aiProcess_CalcTangentSpace | aiProcess_ImproveCacheLocality |
+      aiProcess_OptimizeMeshes | aiProcess_PreTransformVertices);
 
   if (!scene || !scene->mRootNode ||
       scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) {
     throw std::runtime_error("Failed to load model.");
-  }
-
-  auto meta_data = scene->mMetaData;
-  auto keys = std::span{ meta_data->mKeys, meta_data->mNumProperties };
-  auto values = std::span{ meta_data->mValues, meta_data->mNumProperties };
-  for (std::size_t i = 0; i < keys.size(); ++i) {
-    auto to_string = [](const aiString& str) {
-      return std::string_view{ str.C_Str(), str.length };
-    };
-    std::cout << "  " << to_string(keys[i]) << " : " << values[i].mType << "\n";
   }
 
   std::vector<MeshData> meshes;
@@ -126,35 +165,39 @@ LodGenerator::process_assimp_mesh(const aiScene* scene, const aiMesh* ai_mesh)
   // Generate shadow indices
   pimpl->generate_shadow_lods(mesh.shadow_vertices, original_indices, mesh);
 
-  if (ai_mesh->mMaterialIndex >= 0) {
-    if (mesh.material.size() < ai_mesh->mMaterialIndex) {
-      mesh.material.resize(ai_mesh->mMaterialIndex + 1);
-    }
+  const aiMaterial* ai_mat = scene->mMaterials[ai_mesh->mMaterialIndex];
 
-    aiMaterial* ai_mat = scene->mMaterials[ai_mesh->mMaterialIndex];
+  aiString tex_path;
+  if (ai_mat->GetTexture(aiTextureType_DIFFUSE, 0, &tex_path) == AI_SUCCESS &&
+      scene->GetEmbeddedTexture(tex_path.C_Str()) != nullptr) {
+    if (auto img =
+          decode_embedded_image(scene->GetEmbeddedTexture(tex_path.C_Str()));
+        img.has_value()) {
 
-    constexpr auto base_dir = "assets/meshes";
+      [name = std::string{ tex_path.C_Str() },
+       data = std::move(img.value()),
+       &ts = mesh.textures,
+       ctx = context,
+       &m = mesh.material] {
+        auto tex = VkTexture::from_memory(
+            *ctx,
+            std::span(data.rgba),
+            VkTextureDescription{
+              .format = Format::RGBA_UN8,
+              .extent = { static_cast<std::uint32_t>(data.width),
+                          static_cast<std::uint32_t>(data.height),
+                          1 },
+              .usage_flags = TextureUsageFlags::Sampled |
+                             TextureUsageFlags::TransferDestination,
+              .debug_name = std::format("MemoryLoaded_{}", name),
+            });
+        const auto tex_handle = ts.emplace_back(
+          std::move(tex)).index();
+        // We release the handle here because the texture pool will manage its
+        // lifetime
 
-    aiString tex_path;
-    if (ai_mat->GetTexture(aiTextureType_DIFFUSE, 0, &tex_path) == AI_SUCCESS) {
-      // Convert Assimp path to your engine’s texture loader
-      std::filesystem::path full_path =
-        std::filesystem::path{ base_dir } / tex_path.C_Str();
-
-      // TODO: replace with your actual VkTexture::create wrapper
-      auto tex_handle = VkTexture::create(
-        context,
-        VkTextureDescription{
-          .data = load_file_binary(full_path), // You’ll need a file loader here
-          .format = vk_format_to_format(VK_FORMAT_R8G8B8A8_UNORM),
-          .usage_flags = TextureUsageFlags::Sampled,
-          .debug_name = full_path.filename().string() });
-
-      mesh.material.at(ai_mesh->mMaterialIndex).albedo_texture =
-        tex_handle.index(); // store bindless handle
-    } else {
-      mesh.material.at(ai_mesh->mMaterialIndex).albedo_texture =
-        Material::white_texture; // fallback
+        m.albedo_texture = tex_handle;
+      }();
     }
   }
 
@@ -280,12 +323,12 @@ LodGenerator::Impl::create_mesh_from_raw_data(
   mesh.shadow_vertices.reserve(vertex_count);
 
   for (size_t i = 0; i < vertex_count; i++) {
-    Vertex v;
+    Vertex v{};
     v.position = positions[i];
     v.normal = (i < normals.size()) ? normals[i] : glm::vec3(0.0f, 1.0f, 0.0f);
     v.texcoord = (i < texcoords.size()) ? texcoords[i] : glm::vec2(0.0f);
 
-    ShadowVertex sv;
+    ShadowVertex sv{};
     sv.position = v.position;
 
     mesh.vertices.push_back(v);
@@ -489,7 +532,7 @@ Mesh::create(IContext& context, const std::string_view path_view)
     return unexpected<std::string>{ "Not obj or gltf." };
 
   // Configure LOD settings BEFORE loading
-  LodGenerator generator;
+  LodGenerator generator{ context };
   LodGenerator::LodConfig lod_config{};
   lod_config.target_errors = { 0.005f, 0.02f, 0.08f, 0.15f,
                                0.3f,   0.5f,  0.7f,  0.9f };
@@ -509,25 +552,26 @@ Mesh::create(IContext& context, const std::string_view path_view)
       "Only single-mesh assets supported for now."
     };
 
-  auto index_buffer_data = generator.get_global_index_buffer();
-  auto shadow_index_buffer_data = generator.get_global_shadow_index_buffer();
+  const auto index_buffer_data = generator.get_global_index_buffer();
+  const auto shadow_index_buffer_data = generator.get_global_shadow_index_buffer();
 
-  auto& loaded_mesh = meshes.at(0);
 
   Mesh mesh{};
+  {
+  auto& loaded_mesh = meshes.at(0);
+  mesh.mesh_data = std::make_unique<MeshData>(std::move(loaded_mesh));
+  }
 
-  mesh.mesh_data = loaded_mesh;
-
-  if (loaded_mesh.vertices.empty()) {
+  if (mesh.mesh_data->vertices.empty()) {
     return unexpected<std::string>{ "No vertices in mesh." };
   }
   if (index_buffer_data.empty()) {
     return unexpected<std::string>{ "No indices generated." };
   }
-  if (loaded_mesh.lod_levels.empty()) {
+  if (mesh.mesh_data->lod_levels.empty()) {
     return unexpected<std::string>{ "No LOD levels generated." };
   }
-  if (loaded_mesh.shadow_lod_levels.empty()) {
+  if (mesh.mesh_data->shadow_lod_levels.empty()) {
     return unexpected<std::string>{ "No shadow LOD levels generated." };
   }
 
@@ -535,8 +579,8 @@ Mesh::create(IContext& context, const std::string_view path_view)
   mesh.vertex_buffer = VkDataBuffer::create(
     context,
     BufferDescription{
-      .data = std::as_bytes(std::span(loaded_mesh.vertices)),
-      .size = loaded_mesh.vertices.size() * sizeof(Vertex),
+      .data = std::as_bytes(std::span(mesh.mesh_data->vertices)),
+      .size = mesh.mesh_data->vertices.size() * sizeof(Vertex),
       .storage = StorageType::DeviceLocal,
       .usage = BufferUsageFlags::VertexBuffer,
       .debug_name = std::format("{}_VB", path.filename().string()),
@@ -546,8 +590,8 @@ Mesh::create(IContext& context, const std::string_view path_view)
   mesh.shadow_vertex_buffer = VkDataBuffer::create(
     context,
     BufferDescription{
-      .data = std::as_bytes(std::span(loaded_mesh.shadow_vertices)),
-      .size = loaded_mesh.shadow_vertices.size() * sizeof(ShadowVertex),
+      .data = std::as_bytes(std::span(mesh.mesh_data->shadow_vertices)),
+      .size = mesh.mesh_data->shadow_vertices.size() * sizeof(ShadowVertex),
       .storage = StorageType::DeviceLocal,
       .usage = BufferUsageFlags::VertexBuffer,
       .debug_name = std::format("{}_SVB", path.filename().string()),

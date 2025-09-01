@@ -274,6 +274,13 @@ VkShader::VkShader(IContext* ctx,
   , modules(std::move(mods))
   , flags(flag_bits)
 {
+
+  static bool glslang_is_initialised = false;
+        if (!glslang_is_initialised) {
+          glslang_initialize_process();
+          glslang_is_initialised = true;
+        }
+
 }
 
 }

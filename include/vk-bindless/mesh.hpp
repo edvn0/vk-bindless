@@ -19,6 +19,7 @@ struct Material
   static constexpr std::uint32_t white_texture = 0;
 
   std::uint32_t albedo_texture{ white_texture };
+
 };
 
 struct Vertex
@@ -40,6 +41,11 @@ struct LodInfo
   float target_error;
 };
 
+#define MAKE_NONCOPYABLE(TypeName) \
+  TypeName(const TypeName&) = delete; \
+  TypeName& operator=(const TypeName&) = delete
+
+
 struct MeshData
 {
   std::vector<Vertex> vertices;
@@ -48,7 +54,11 @@ struct MeshData
   std::vector<LodInfo> lod_levels;
   std::vector<LodInfo> shadow_lod_levels; // Multiple shadow LOD levels
 
-  std::vector<Material> material{};
+  Material material{};
+
+  // This may be wrong.
+  std::vector<Holder<TextureHandle>> textures;
+
 };
 
 class LodGenerator
@@ -58,8 +68,10 @@ private:
   struct Impl;
   std::unique_ptr<Impl> pimpl;
 
+  IContext* context{ nullptr };
+
 public:
-  LodGenerator();
+  explicit LodGenerator(IContext&);
   ~LodGenerator();
 
   // Move-only semantics
@@ -113,8 +125,7 @@ class Mesh
   Holder<BufferHandle> lod_index_buffer;
   Holder<BufferHandle> lod_shadow_index_buffer;
 
-  MeshData mesh_data{};
-
+  std::unique_ptr<MeshData> mesh_data;
 public:
   [[nodiscard]] auto get_vertex_buffer() const { return *vertex_buffer; }
   [[nodiscard]] auto get_shadow_vertex_buffer() const
@@ -126,25 +137,25 @@ public:
   {
     return *lod_shadow_index_buffer;
   }
-  [[nodiscard]] auto get_mesh_data() const -> const auto& { return mesh_data; }
+  [[nodiscard]] auto get_mesh_data() const -> const auto& { return *mesh_data; }
   [[nodiscard]] auto get_index_binding_data(const std::size_t lod_index) const
   {
-    auto& data = mesh_data.lod_levels.at(lod_index);
+    auto& data = mesh_data->lod_levels.at(lod_index);
     return std::make_pair(data.index_count, data.index_offset);
   }
   [[nodiscard]] auto get_shadow_index_binding_data(
     const std::size_t lod_index) const
   {
-    auto& data = mesh_data.shadow_lod_levels.at(lod_index);
+    auto& data = mesh_data->shadow_lod_levels.at(lod_index);
     return std::make_pair(data.index_count, data.index_offset);
   }
   [[nodiscard]] auto get_lod_count() const -> std::size_t
   {
-    return mesh_data.lod_levels.size();
+    return mesh_data->lod_levels.size();
   }
   [[nodiscard]] auto get_shadow_lod_count() const -> std::size_t
   {
-    return mesh_data.shadow_lod_levels.size();
+    return mesh_data->shadow_lod_levels.size();
   }
 
   static auto create(IContext&, std::string_view)

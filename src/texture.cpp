@@ -6,9 +6,14 @@
 #include "vk-bindless/types.hpp"
 #include "vk-bindless/vulkan_context.hpp"
 
+#include <assimp/texture.h>
 #include <cmath>
+#include <fstream>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 namespace VkBindless {
 
@@ -21,8 +26,9 @@ max(T0&& first, Ts&&... rest)
   return max_value;
 }
 
-auto VkTexture::create_internal_image(IContext& ctx,
-                                      const VkTextureDescription& description)
+auto
+VkTexture::create_internal_image(IContext& ctx,
+                                 const VkTextureDescription& description)
   -> void
 {
   auto& allocator = ctx.get_allocator_implementation();
@@ -35,13 +41,15 @@ auto VkTexture::create_internal_image(IContext& ctx,
   image_info.mipLevels = description.mip_levels.value_or(
     static_cast<std::uint32_t>(std::log2(max(description.extent.width,
                                              description.extent.height,
-                                             description.extent.depth)) + 1));
+                                             description.extent.depth)) +
+                               1));
   image_info.arrayLayers = description.layers;
   image_info.samples = description.sample_count;
   image_info.tiling = description.tiling;
   image_info.usage = static_cast<VkImageUsageFlags>(description.usage_flags);
   if (!description.data.empty()) {
-    image_info.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    image_info.usage |=
+      VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
   }
   image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
   image_info.initialLayout = description.initial_layout;
@@ -49,15 +57,9 @@ auto VkTexture::create_internal_image(IContext& ctx,
 
   assert(image_info.mipLevels > 0 && image_info.arrayLayers > 0);
 
-  if (description.debug_name.empty()) {
-    set_name_for_object(ctx.get_device(),
-                        VK_OBJECT_TYPE_IMAGE,
-                        image,
-                        std::format("{}-[{}x{}]",
-                                    description.debug_name,
-                                    description.extent.width,
-                                    description.extent.height));
-  }
+  assert(!description.debug_name.empty());
+
+
 
   const AllocationCreateInfo alloc_info{
     .usage = MemoryUsage::AutoPreferDevice,
@@ -79,168 +81,24 @@ auto VkTexture::create_internal_image(IContext& ctx,
   mip_levels = image_info.mipLevels;
   array_layers = image_info.arrayLayers;
 
+  if (!description.debug_name.empty()) {
+    set_name_for_object(ctx.get_device(),
+                        VK_OBJECT_TYPE_IMAGE,
+                        image,
+                        std::format("{}-[{}x{}]",
+                                    description.debug_name,
+                                    description.extent.width,
+                                    description.extent.height));
+  }
+
   const auto& data = description.data;
-  if (data.empty()) return;
+  if (data.empty())
+    return;
 
-  VkFormatProperties props{};
-  vkGetPhysicalDeviceFormatProperties(ctx.get_physical_device(), image_info.format, &props);
-  if ((props.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) == 0) {
-    throw std::runtime_error("Format does not support linear blit for mip generation");
-  }
-
-  auto mip_extent = [](VkExtent3D e, std::uint32_t level) -> VkExtent3D {
-    return VkExtent3D{
-      .width  = std::max(1u, e.width  >> level),
-      .height = std::max(1u, e.height >> level),
-      .depth  = std::max(1u, e.depth  >> level),
-    };
-  };
-
-  auto staging_buffer = VkDataBuffer::create(
-    ctx,
-    BufferDescription{
-      .size = data.size_bytes(),
-      .storage = StorageType::DeviceLocal,
-      .usage = BufferUsageFlags::TransferSrc | BufferUsageFlags::TransferDst,
-      .debug_name = std::format("StagingBuffer for Texture '{}'", description.debug_name),
-    });
-
-  auto get_buffer = [](auto& context, auto& buffer) {
-    if (const VkDataBuffer* b = *context.get_buffer_pool().get(buffer)) {
-      return b->get_buffer();
-    }
-    return static_cast<VkBuffer>(VK_NULL_HANDLE);
-  };
-
-  if (auto mapped = ctx.get_mapped_pointer(*staging_buffer); mapped) {
-    std::memcpy(mapped, data.data(), data.size_bytes());
-    ctx.flush_mapped_memory(*staging_buffer, 0, data.size_bytes());
-  } else {
-    throw std::runtime_error("Failed to map staging buffer");
-  }
-
-  auto& cmd = ctx.acquire_command_buffer();
-  auto cb = dynamic_cast<CommandBuffer&>(cmd).get_command_buffer();
-
-  auto barrier = [&](VkImageLayout old_layout,
-                     VkImageLayout new_layout,
-                     VkPipelineStageFlags2 src_stage,
-                     VkPipelineStageFlags2 dst_stage,
-                     VkAccessFlags2 src_access,
-                     VkAccessFlags2 dst_access,
-                     std::uint32_t base_mip,
-                     std::uint32_t level_count) {
-    VkImageMemoryBarrier2 b{};
-    b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-    b.srcStageMask = src_stage;
-    b.dstStageMask = dst_stage;
-    b.srcAccessMask = src_access;
-    b.dstAccessMask = dst_access;
-    b.oldLayout = old_layout;
-    b.newLayout = new_layout;
-    b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    b.image = image;
-    b.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, base_mip, level_count, 0u, image_info.arrayLayers };
-
-    VkDependencyInfo dep{};
-    dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dep.imageMemoryBarrierCount = 1;
-    dep.pImageMemoryBarriers = &b;
-
-    vkCmdPipelineBarrier2(cb, &dep);
-  };
-
-  barrier(image_info.initialLayout,
-          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-          VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
-          VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-          0,
-          VK_ACCESS_2_TRANSFER_WRITE_BIT,
-          0u,
-          image_info.mipLevels);
-
-  VkBufferImageCopy2 region{};
-  region.sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2;
-  region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, image_info.arrayLayers };
-  region.imageOffset = { 0, 0, 0 };
-  region.imageExtent = image_info.extent;
-
-  VkCopyBufferToImageInfo2 copy{};
-  copy.sType = VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2;
-  copy.srcBuffer = get_buffer(ctx, staging_buffer);
-  copy.dstImage = image;
-  copy.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-  copy.regionCount = 1;
-  copy.pRegions = &region;
-
-  vkCmdCopyBufferToImage2(cb, &copy);
-
-  barrier(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-          VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-          VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-          VK_ACCESS_2_TRANSFER_WRITE_BIT,
-          VK_ACCESS_2_TRANSFER_READ_BIT,
-          0u,
-          1u);
-
-  for (std::uint32_t mip = 1; mip < image_info.mipLevels; ++mip) {
-    auto src_e = mip_extent(image_info.extent, mip - 1);
-    auto dst_e = mip_extent(image_info.extent, mip);
-
-    for (std::uint32_t layer = 0; layer < image_info.arrayLayers; ++layer) {
-      VkImageBlit2 blit{};
-      blit.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2;
-      blit.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, mip - 1, layer, 1 };
-      blit.srcOffsets[0] = { 0, 0, 0 };
-      blit.srcOffsets[1] = { static_cast<int32_t>(src_e.width),
-                             static_cast<int32_t>(src_e.height),
-                             static_cast<int32_t>(src_e.depth) };
-      blit.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, mip, layer, 1 };
-      blit.dstOffsets[0] = { 0, 0, 0 };
-      blit.dstOffsets[1] = { static_cast<int32_t>(dst_e.width),
-                             static_cast<int32_t>(dst_e.height),
-                             static_cast<int32_t>(dst_e.depth) };
-
-      VkBlitImageInfo2 bi{};
-      bi.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2;
-      bi.srcImage = image;
-      bi.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-      bi.dstImage = image;
-      bi.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-      bi.regionCount = 1;
-      bi.pRegions = &blit;
-      bi.filter = VK_FILTER_LINEAR;
-
-      vkCmdBlitImage2(cb, &bi);
-    }
-
-    barrier(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-            VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-            VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-            VK_ACCESS_2_TRANSFER_WRITE_BIT,
-            VK_ACCESS_2_TRANSFER_READ_BIT,
-            mip,
-            1u);
-  }
-
-  const auto final_layout =
-    description.final_layout.value_or(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-  barrier(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-          final_layout,
-          VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-          VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-          VK_ACCESS_2_TRANSFER_READ_BIT,
-          VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
-          0u,
-          image_info.mipLevels);
-
-  auto submitted = ctx.submit(cmd, {});
-  if (!submitted) throw std::runtime_error(submitted.error());
-  ctx.wait_for(submitted.value());
+  const auto& vulkan_context = dynamic_cast<Context&>(ctx);
+  vulkan_context.staging_allocator->upload(*this,
+    VkRect2D{ .offset = {0, 0}, .extent = {description.extent.width, description.extent.height,}, },
+    0, 1, 0, description.layers, image_info.format, data.data(), 0);
 }
 
 VkTexture::VkTexture(IContext& ctx, const VkTextureDescription& description)
@@ -252,14 +110,22 @@ VkTexture::VkTexture(IContext& ctx, const VkTextureDescription& description)
   , sampled{ static_cast<bool>(description.usage_flags &
                                TextureUsageFlags::Sampled) }
   , storage{ static_cast<bool>(description.usage_flags &
-                               TextureUsageFlags::Storage) },
-is_depth{ static_cast<bool>(description.usage_flags &
-                               TextureUsageFlags::DepthStencilAttachment) }
+                               TextureUsageFlags::Storage) }
+  , is_depth{ static_cast<bool>(description.usage_flags &
+                                TextureUsageFlags::DepthStencilAttachment) }
 {
   if (!description.externally_created_image) {
     create_internal_image(ctx, description);
   } else {
     image = *description.externally_created_image;
+
+    set_name_for_object(ctx.get_device(),
+                        VK_OBJECT_TYPE_IMAGE,
+                        image,
+                        std::format("External_Image_{}-[{}x{}]",
+                                    description.debug_name,
+                                    description.extent.width,
+                                    description.extent.height));
   }
   if (is_swapchain)
     return;
@@ -274,9 +140,8 @@ is_depth{ static_cast<bool>(description.usage_flags &
                          ? VK_IMAGE_VIEW_TYPE_CUBE
                          : VK_IMAGE_VIEW_TYPE_2D;
   view_info.format = format_to_vk_format(description.format);
-  view_info.subresourceRange.aspectMask = is_depth
-                                           ? VK_IMAGE_ASPECT_DEPTH_BIT
-                                           : VK_IMAGE_ASPECT_COLOR_BIT;
+  view_info.subresourceRange.aspectMask =
+    is_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
   view_info.subresourceRange.baseMipLevel = 0;
   view_info.subresourceRange.levelCount = mip_levels;
   view_info.subresourceRange.baseArrayLayer = 0;
@@ -288,13 +153,16 @@ is_depth{ static_cast<bool>(description.usage_flags &
 
   VK_VERIFY(
     vkCreateImageView(ctx.get_device(), &view_info, nullptr, &image_view));
+  set_name_for_object(ctx.get_device(),
+                      VK_OBJECT_TYPE_IMAGE_VIEW,
+                      image_view,
+                      std::format("{} View",
+                                  description.debug_name));
 
   mip_layer_views.resize(mip_levels * array_layers);
 
   // Less than two views means just one view for the entire image
-  const auto has_only_one_view =
-    mip_levels == 1 && array_layers == 1;
-  if (has_only_one_view) {
+  if (const auto has_only_one_view = mip_levels == 1 && array_layers == 1) {
     mip_layer_views.at(0) = image_view;
   } else {
     for (auto mip = 0U; mip < mip_levels; ++mip) {
@@ -308,6 +176,14 @@ is_depth{ static_cast<bool>(description.usage_flags &
         auto& mip_layer_view = mip_layer_views[index];
         VK_VERIFY(vkCreateImageView(
           ctx.get_device(), &view_info, nullptr, &mip_layer_view));
+
+        set_name_for_object(ctx.get_device(),
+                            VK_OBJECT_TYPE_IMAGE_VIEW,
+                            mip_layer_view,
+                            std::format("{} View Mip[{}] Layer[{}]",
+                                        description.debug_name,
+                                        mip,
+                                        layer));
       }
     }
   }
@@ -335,6 +211,84 @@ VkTexture::create(IContext& context, const VkTextureDescription& description)
   };
 }
 
+auto
+load_image_file(const std::string_view path)
+{
+  // stbi
+  auto stream = std::ifstream{ path.data(), std::ios::binary };
+  if (!stream) {
+    throw std::runtime_error("Failed to open file: " + std::string{ path });
+  }
+  std::int32_t width = 0;
+  std::int32_t height = 0;
+  std::int32_t channels = 0;
+
+  auto buffer = std::vector<char>(std::istreambuf_iterator<char>(stream),
+                                  std::istreambuf_iterator<char>());
+
+  auto res =
+    stbi_load_from_memory(reinterpret_cast<stbi_uc const*>(buffer.data()),
+                          static_cast<int>(buffer.size()),
+                          &width,
+                          &height,
+                          &channels,
+                          STBI_rgb_alpha);
+  if (!res) {
+    throw std::runtime_error("Failed to load image: " + std::string{ path });
+  }
+  auto size = width * height * 4; // 4 channels (RGBA)
+  std::vector<std::uint8_t> data(size);
+  std::memcpy(data.data(), res, size);
+  stbi_image_free(res);
+
+  struct Output
+  {
+    std::vector<std::uint8_t> data;
+    int width;
+    int height;
+    int channels;
+  };
+
+  return Output{
+    .data = std::move(data),
+    .width = width,
+    .height = height,
+    .channels = channels,
+  };
+}
+
+auto
+VkTexture::from_file(IContext& ctx,
+                     const std::string_view path,
+                     const VkTextureDescription& desc) -> Holder<TextureHandle>
+{
+  auto copy = desc;
+  auto&& [data, w, h, channels] = load_image_file(path);
+  if (data.empty())
+    return Holder<TextureHandle>::invalid();
+  copy.data = std::span(data);
+  copy.extent = VkExtent3D{
+    static_cast<std::uint32_t>(w),
+    static_cast<std::uint32_t>(h),
+    1,
+  };
+
+  return create(ctx, copy);
+}
+
+auto
+VkTexture::from_memory(IContext& ctx,
+                       const std::span<const std::uint8_t> bytes,
+                       const VkTextureDescription& desc)
+  -> Holder<TextureHandle>
+{
+  if (bytes.empty())
+    return Holder<TextureHandle>::invalid();
+  auto copy = desc;
+  copy.data = bytes;
+  return create(ctx, copy);
+}
+
 VkFilter
 filter_mode_to_vk_filter_mode(FilterMode filter_mode)
 {
@@ -348,8 +302,8 @@ filter_mode_to_vk_filter_mode(FilterMode filter_mode)
   }
 }
 
-VkSamplerMipmapMode filter_mode_to_vk_mip_map_mode(
-  MipMapMode mip_map_mode)
+VkSamplerMipmapMode
+filter_mode_to_vk_mip_map_mode(MipMapMode mip_map_mode)
 {
   switch (mip_map_mode) {
     case MipMapMode::Nearest:
@@ -406,26 +360,26 @@ VkTextureSampler::create(IContext& context, const SamplerDescription& info)
   auto& pool = context.get_sampler_pool();
   VkSampler sampler{ VK_NULL_HANDLE };
   const VkSamplerCreateInfo sampler_info{
-  .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-  .pNext = nullptr,
-  .flags = 0,
-  .magFilter = filter_mode_to_vk_filter_mode(info.mag_filter),
-  .minFilter = filter_mode_to_vk_filter_mode(info.min_filter),
-  .mipmapMode = filter_mode_to_vk_mip_map_mode(info.mipmap_mode),
-  .addressModeU = address_mode_to_vk_address_mode(info.wrap_u),
-  .addressModeV = address_mode_to_vk_address_mode(info.wrap_v),
-  .addressModeW = address_mode_to_vk_address_mode(info.wrap_w),
-  .mipLodBias = 0.0f,
-  .anisotropyEnable = false,
-  .maxAnisotropy = 1.0f,
-  .compareEnable = info.compare_op.has_value(),
-  .compareOp = info.compare_op.has_value()
-                 ? static_cast<VkCompareOp>(*info.compare_op)
-                 : VK_COMPARE_OP_NEVER,
-  .minLod = info.min_lod,
-  .maxLod = info.max_lod,
-  .borderColor = border_color_to_vk_border_color(info.border_color),
-  .unnormalizedCoordinates = false,
+    .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    .magFilter = filter_mode_to_vk_filter_mode(info.mag_filter),
+    .minFilter = filter_mode_to_vk_filter_mode(info.min_filter),
+    .mipmapMode = filter_mode_to_vk_mip_map_mode(info.mipmap_mode),
+    .addressModeU = address_mode_to_vk_address_mode(info.wrap_u),
+    .addressModeV = address_mode_to_vk_address_mode(info.wrap_v),
+    .addressModeW = address_mode_to_vk_address_mode(info.wrap_w),
+    .mipLodBias = 0.0f,
+    .anisotropyEnable = false,
+    .maxAnisotropy = 1.0f,
+    .compareEnable = info.compare_op.has_value(),
+    .compareOp = info.compare_op.has_value()
+                   ? static_cast<VkCompareOp>(*info.compare_op)
+                   : VK_COMPARE_OP_NEVER,
+    .minLod = info.min_lod,
+    .maxLod = info.max_lod,
+    .borderColor = border_color_to_vk_border_color(info.border_color),
+    .unnormalizedCoordinates = false,
   };
   VK_VERIFY(
     vkCreateSampler(context.get_device(), &sampler_info, nullptr, &sampler));
@@ -495,9 +449,9 @@ VkTexture::get_or_create_framebuffer_view(IContext& context,
     nullptr,
     &cached_framebuffer_views[mip * cube_array_layers + layer]));
   const auto name = std::format("Framebuffer_({})_view (mip: {}, layer: {})",
-                          static_cast<const void*>(image),
-                          mip,
-                          layer);
+                                static_cast<const void*>(image),
+                                mip,
+                                layer);
   set_name_for_object(
     context.get_device(),
     VK_OBJECT_TYPE_IMAGE_VIEW,

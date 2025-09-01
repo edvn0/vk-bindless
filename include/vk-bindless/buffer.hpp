@@ -67,6 +67,8 @@ public:
   [[nodiscard]]auto is_mapped() const -> bool { return allocation.mapped_data != nullptr; }
   [[nodiscard]]auto get_size() const -> VkDeviceSize { return size; }
   [[nodiscard]]auto get_memory() const -> VkDeviceMemory { return allocation.memory; }
+  [[nodiscard]] auto get_usage_flags() const -> VkBufferUsageFlags { return usage_flags; }
+  [[nodiscard]] auto get_memory_flags() const -> VkMemoryPropertyFlags { return memory_flags; }
 
   auto flush_mapped_memory(IContext&,
                            std::uint64_t offset = 0,
@@ -75,7 +77,7 @@ public:
                                 std::uint64_t offset = 0,
                                 std::uint64_t size = VK_WHOLE_SIZE) -> void;
 
-  auto upload(std::ranges::contiguous_range auto R)
+  auto upload(std::ranges::contiguous_range auto R, std::uint64_t offset = 0)
   {
     constexpr auto Size = std::ranges::range_size_t<decltype(R)>::value;
     if (!is_mapped()) {
@@ -84,9 +86,10 @@ public:
     if (R.size() * Size > size) {
       throw std::runtime_error("Data size exceeds buffer size");
     }
-    std::memcpy(allocation.mapped_data, R.data(), R.size() * Size);
+    const auto offset_to_pointer = static_cast<std::byte*>(allocation.mapped_data) + offset;
+    std::memcpy(offset_to_pointer, R.data(), R.size() * Size);
   }
-  auto upload(const std::span<const std::byte> data) const
+  auto upload(const std::span<const std::byte> data, std::uint64_t offset = 0) const
   {
     if (!is_mapped()) {
       throw std::runtime_error("Buffer is not mapped");
@@ -94,10 +97,11 @@ public:
     if (data.size() > size) {
       throw std::runtime_error("Data size exceeds buffer size");
     }
-    std::memcpy(allocation.mapped_data, data.data(), data.size());
+    const auto offset_to_pointer = static_cast<std::byte*>(allocation.mapped_data) + offset;
+    std::memcpy(offset_to_pointer, data.data(), data.size());
   }
   template<typename T>
-  auto upload(std::span<const T> data)
+  auto upload(std::span<const T> data, std::uint64_t offset = 0)
   {
     if (!is_mapped()) {
       throw std::runtime_error("Buffer is not mapped");
@@ -105,7 +109,8 @@ public:
     if (data.size_bytes() > size) {
       throw std::runtime_error("Data size exceeds buffer size");
     }
-    std::memcpy(allocation.mapped_data, data.data(), data.size_bytes());
+    const auto offset_to_pointer = static_cast<std::byte*>(allocation.mapped_data) + offset;
+    std::memcpy(offset_to_pointer, data.data(), data.size_bytes());
   }
 };
 

@@ -155,11 +155,29 @@ function(ADD_MESHOPTIMIZER)
     add_library(meshoptimizer::meshoptimizer ALIAS meshoptimizer)
 endfunction()
 
+function(ADD_STB)
+    if(TARGET stb::stb)
+        return()
+    endif()
+
+    file(GLOB STB_SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/stb/*.h"
+    )
+
+    add_library(stb INTERFACE ${STB_SOURCES})
+    add_library(stb::stb ALIAS stb)
+
+    target_include_directories(stb INTERFACE
+        "${CMAKE_CURRENT_SOURCE_DIR}/stb"
+    )
+endfunction()
+
 ADD_IMPLOT()
 ADD_IMGUI()
 ADD_IMGUIZMO()
 ADD_ASSIMP()
 ADD_MESHOPTIMIZER()
+ADD_STB()
 
 if(ENABLE_TESTING)
     add_subdirectory(doctest)

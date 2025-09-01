@@ -3,6 +3,7 @@
 #include "vk-bindless/allocator_interface.hpp"
 #include "vk-bindless/graphics_context.hpp"
 #include "vk-bindless/object_pool.hpp"
+#include "vk-bindless/vulkan_context.hpp"
 
 namespace VkBindless {
 
@@ -105,6 +106,14 @@ VkDataBuffer::create(IContext& context, const BufferDescription& desc)
   buffer.allocation = allocation;
   if (!desc.data.empty()) {
     buffer.upload(desc.data);
+  }
+
+  assert(!desc.debug_name.empty());
+  if (!desc.debug_name.empty()) {
+    set_name_for_object(context.get_device(),
+                        VK_OBJECT_TYPE_BUFFER,
+                        buffer.buffer,
+                        desc.debug_name);
   }
 
   return Holder<BufferHandle>{

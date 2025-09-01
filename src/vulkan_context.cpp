@@ -389,25 +389,43 @@ Context::~Context()
   vkDeviceWaitIdle(vkb_device.device);
 
   swapchain.reset();
+  staging_allocator.reset();
 
   destroy(dummy_texture);
   destroy(dummy_sampler);
 
-  process_callbacks();
-
   // Destroy all resources
+  buffer_pool.clear();
+  compute_pipeline_pool.clear();
+  graphics_pipeline_pool.clear();
+  shader_module_pool.clear();
   texture_pool.clear();
   sampler_pool.clear();
+
+  process_callbacks();
+
+  immediate_commands.reset();
+
+  vkDestroyDescriptorSetLayout(
+    vkb_device.device, descriptor_set_layout, nullptr);
+  vkDestroyDescriptorPool(vkb_device.device, descriptor_pool, nullptr);
+  vkDestroySemaphore(vkb_device.device, timeline_semaphore, nullptr);
+
+  glslang_finalize_process();
+
+  vkb::destroy_device(vkb_device);
+  vkb::destroy_surface(vkb_instance, surface);
+  vkb::destroy_instance(vkb_instance);
 }
 
-constexpr size_t QUEUE_SIZE = 1024;
+constexpr std::size_t QUEUE_SIZE = 1024;
 
 template<typename Message = std::string>
 struct LockFreeQueue
 {
   std::array<Message, QUEUE_SIZE> buffer{};
-  std::atomic<size_t> head{ 0 };
-  std::atomic<size_t> tail{ 0 };
+  std::atomic<std::size_t> head{ 0 };
+  std::atomic<std::size_t> tail{ 0 };
 
   auto push(Message&& msg)
   {
@@ -701,6 +719,8 @@ Context::create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
       ? create_timeline_semaphore(
           vkb_device.device, context->swapchain->swapchain_image_count() - 1)
       : VK_NULL_HANDLE;
+  context->staging_allocator =
+    Unique<StagingAllocator>{ new StagingAllocator{ *context } };
 
   context->create_placeholder_resources();
   context->update_resource_bindings();
@@ -1671,22 +1691,20 @@ Context::destroy(const TextureHandle handle) -> void
                   img = texture](auto device, auto* allocation_callbacks) {
     for (const auto view = img->get_mip_layers_image_views();
          const auto& v : view) {
-      if (VK_NULL_HANDLE == v) {
-        continue;
+      if (VK_NULL_HANDLE != v) {
+        vkDestroyImageView(device, v, allocation_callbacks);
       }
-      vkDestroyImageView(device, v, allocation_callbacks);
+    }
+
+    for (const auto& i : img->get_framebuffer_views()) {
+      if (i != VK_NULL_HANDLE) {
+        vkDestroyImageView(device, i, allocation_callbacks);
+      }
     }
 
     vkDestroyImageView(device, img->get_image_view(), allocation_callbacks);
     if (const auto storage_view = img->get_storage_image_view())
       vkDestroyImageView(device, storage_view, allocation_callbacks);
-
-    // destroy all framebuffer views
-    for (auto&& view : img->get_framebuffer_views()) {
-      if (view != VK_NULL_HANDLE) {
-        vkDestroyImageView(device, view, allocation_callbacks);
-      }
-    }
   });
 
   if (!texture->owns_self()) {
@@ -1698,7 +1716,7 @@ Context::destroy(const TextureHandle handle) -> void
 }
 
 auto
-Context::destroy(BufferHandle handle) -> void
+Context::destroy(const BufferHandle handle) -> void
 {
   SCOPE_EXIT
   {
@@ -1707,9 +1725,7 @@ Context::destroy(BufferHandle handle) -> void
                 << std::to_underlying(exp.error()) << std::endl;
     }
   };
-  auto buf = *get_buffer_pool().get(handle);
-  if (!buf)
-    return;
+  const auto buf = *get_buffer_pool().get(handle);
   pre_frame_task([&vma = get_allocator_implementation(),
                   buffer = buf->get_buffer()](auto, auto) {
     vma.deallocate_buffer(buffer);
@@ -1729,7 +1745,7 @@ Context::destroy(ComputePipelineHandle) -> void
 }
 
 auto
-Context::destroy(GraphicsPipelineHandle handle) -> void
+Context::destroy(const GraphicsPipelineHandle handle) -> void
 {
   if (!handle.valid()) {
     return;
@@ -1782,7 +1798,7 @@ Context::destroy(const SamplerHandle handle) -> void
 }
 
 auto
-Context::destroy(ShaderModuleHandle handle) -> void
+Context::destroy(const ShaderModuleHandle handle) -> void
 {
   if (!handle.valid()) {
     return;
@@ -1793,9 +1809,8 @@ Context::destroy(ShaderModuleHandle handle) -> void
     return;
   }
 
-  auto shader = *maybe_shader.value();
-
-  for (const auto& module : shader.get_modules()) {
+  for (const auto shader = *maybe_shader.value();
+       const auto& module : shader.get_modules()) {
     pre_frame_task(
       [m = module.module](auto device, auto* allocation_callbacks) {
         vkDestroyShaderModule(device, m, allocation_callbacks);
@@ -1804,5 +1819,644 @@ Context::destroy(ShaderModuleHandle handle) -> void
 }
 
 #pragma endregion Destroyers
+
+#pragma region StagingAllocator
+
+static constexpr auto get_aligned_size =
+  [](const auto size, const auto alignment) -> VkDeviceSize {
+  return (size + alignment - 1) & ~(alignment - 1);
+};
+
+static constexpr auto max_staging_buffer_size =
+  256ULL * 1024ULL * 1024ULL; // 256MB
+
+StagingAllocator::StagingAllocator(IContext& ctx)
+  : context(dynamic_cast<Context&>(ctx))
+{
+
+  const auto maxMemoryAllocationSize =
+    context.vulkan_properties.eleven.maxMemoryAllocationSize;
+
+  // clamped to the max limits
+  max_buffer_size = std::min(maxMemoryAllocationSize, max_staging_buffer_size);
+  min_buffer_size = std::min(min_buffer_size, max_buffer_size);
+}
+
+void
+StagingAllocator::upload(VkDataBuffer& buffer,
+                         std::size_t dstOffset,
+                         std::size_t size,
+                         const void* data)
+{
+  if (buffer.is_mapped()) {
+    buffer.upload(std::span(static_cast<const std::byte*>(data), size),
+                  dstOffset);
+    return;
+  }
+
+  auto* stagingBuffer = *context.get_buffer_pool().get(staging_buffer);
+
+  assert(nullptr != stagingBuffer);
+
+  while (size) {
+    // get next staging buffer free offset
+    auto desc = get_next_free_offset(static_cast<uint32_t>(size));
+    const auto chunkSize = std::min(static_cast<uint64_t>(size), desc.size);
+
+    // copy data into staging buffer
+    stagingBuffer->upload(
+      std::span(static_cast<const std::byte*>(data), chunkSize), desc.offset);
+
+    // do the transfer
+    const VkBufferCopy copy = {
+      .srcOffset = desc.offset,
+      .dstOffset = dstOffset,
+      .size = chunkSize,
+    };
+
+    const auto& wrapper = context.immediate_commands->acquire();
+    vkCmdCopyBuffer(wrapper.command_buffer,
+                    stagingBuffer->get_buffer(),
+                    buffer.get_buffer(),
+                    1,
+                    &copy);
+    VkBufferMemoryBarrier barrier = {
+      .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+      .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+      .dstAccessMask = 0,
+      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .buffer = buffer.get_buffer(),
+      .offset = dstOffset,
+      .size = chunkSize,
+    };
+    VkPipelineStageFlags dstMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+    if (buffer.get_usage_flags() & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT) {
+      dstMask |= VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
+      barrier.dstAccessMask |= VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    }
+    if (buffer.get_usage_flags() & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
+      dstMask |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+      barrier.dstAccessMask |= VK_ACCESS_INDEX_READ_BIT;
+    }
+    if (buffer.get_usage_flags() & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
+      dstMask |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+      barrier.dstAccessMask |= VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+    }
+    if (buffer.get_usage_flags() &
+        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR) {
+      dstMask |= VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+      barrier.dstAccessMask |= VK_ACCESS_MEMORY_READ_BIT;
+    }
+    vkCmdPipelineBarrier(wrapper.command_buffer,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         dstMask,
+                         VkDependencyFlags{},
+                         0,
+                         nullptr,
+                         1,
+                         &barrier,
+                         0,
+                         nullptr);
+    desc.handle = context.immediate_commands->submit(wrapper);
+    regions.push_back(desc);
+
+    size -= chunkSize;
+    data = std::bit_cast<std::uint8_t*>(data) + chunkSize;
+    dstOffset += chunkSize;
+  }
+}
+
+struct StageAccess
+{
+  VkPipelineStageFlags2 stage;
+  VkAccessFlags2 access;
+};
+
+void
+imageMemoryBarrier2(VkCommandBuffer buffer,
+                    VkImage image,
+                    StageAccess src,
+                    StageAccess dst,
+                    VkImageLayout oldImageLayout,
+                    VkImageLayout newImageLayout,
+                    VkImageSubresourceRange subresourceRange)
+{
+  const VkImageMemoryBarrier2 barrier = {
+    .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+    .srcStageMask = src.stage,
+    .srcAccessMask = src.access,
+    .dstStageMask = dst.stage,
+    .dstAccessMask = dst.access,
+    .oldLayout = oldImageLayout,
+    .newLayout = newImageLayout,
+    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+    .image = image,
+    .subresourceRange = subresourceRange,
+  };
+
+  const VkDependencyInfo depInfo = {
+    .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+    .imageMemoryBarrierCount = 1,
+    .pImageMemoryBarriers = &barrier,
+  };
+
+  vkCmdPipelineBarrier2(buffer, &depInfo);
+}
+
+struct TextureFormatProperties
+{
+  Format format{ Format::Invalid };
+  std::uint8_t bytes_per_block{ 1 };
+  std::uint8_t block_width{ 1 };
+  std::uint8_t block_height{ 1 };
+  std::uint8_t min_blocks_x{ 1 };
+  std::uint8_t min_blocks_y{ 1 };
+  bool depth{ false };
+  bool stencil{ false };
+  bool compressed{ false };
+  std::uint8_t num_planes{ 1 };
+};
+
+constexpr auto properties = std::to_array<TextureFormatProperties>({
+  { .format = Format::Invalid },
+  { .format = Format::R_UN8, .bytes_per_block = 1 },
+  { .format = Format::R_UI16, .bytes_per_block = 2 },
+  { .format = Format::R_UI32, .bytes_per_block = 4 },
+  { .format = Format::R_UN16, .bytes_per_block = 2 },
+  { .format = Format::R_F16, .bytes_per_block = 2 },
+  { .format = Format::R_F32, .bytes_per_block = 4 },
+  { .format = Format::RG_UN8, .bytes_per_block = 2 },
+  { .format = Format::RG_UI16, .bytes_per_block = 4 },
+  { .format = Format::RG_UI32, .bytes_per_block = 8 },
+  { .format = Format::RG_UN16, .bytes_per_block = 4 },
+  { .format = Format::RG_F16, .bytes_per_block = 4 },
+  { .format = Format::RG_F32, .bytes_per_block = 8 },
+  { .format = Format::RGBA_UN8, .bytes_per_block = 4 },
+  { .format = Format::RGBA_UI32, .bytes_per_block = 16 },
+  { .format = Format::RGBA_F16, .bytes_per_block = 8 },
+  { .format = Format::RGBA_F32, .bytes_per_block = 16 },
+  { .format = Format::RGBA_SRGB8, .bytes_per_block = 4 },
+  { .format = Format::BGRA_UN8, .bytes_per_block = 4 },
+  { .format = Format::BGRA_SRGB8, .bytes_per_block = 4 },
+  { .format = Format::A2B10G10R10_UN, .bytes_per_block = 4 },
+  { .format = Format::A2R10G10B10_UN, .bytes_per_block = 4 },
+  { .format = Format::ETC2_RGB8,
+    .bytes_per_block = 8,
+    .block_width = 4,
+    .block_height = 4,
+    .compressed = true },
+  { .format = Format::ETC2_SRGB8,
+    .bytes_per_block = 8,
+    .block_width = 4,
+    .block_height = 4,
+    .compressed = true },
+  { .format = Format::BC7_RGBA,
+    .bytes_per_block = 16,
+    .block_width = 4,
+    .block_height = 4,
+    .compressed = true },
+  { .format = Format::Z_UN16, .bytes_per_block = 2, .depth = true },
+  { .format = Format::Z_UN24, .bytes_per_block = 3, .depth = true },
+  { .format = Format::Z_F32, .bytes_per_block = 4, .depth = true },
+  { .format = Format::Z_UN24_S_UI8,
+    .bytes_per_block = 4,
+    .depth = true,
+    .stencil = true },
+  { .format = Format::Z_F32_S_UI8,
+    .bytes_per_block = 5,
+    .depth = true,
+    .stencil = true },
+  { .format = Format::YUV_NV12,
+    .bytes_per_block = 24,
+    .block_width = 4,
+    .block_height = 4,
+    .compressed = true,
+    .num_planes = 2 },
+  { .format = Format::YUV_420p,
+    .bytes_per_block = 24,
+    .block_width = 4,
+    .block_height = 4,
+    .compressed = true,
+    .num_planes = 3 },
+});
+
+auto
+get_texture_bytes_per_layer(const std::uint32_t width,
+                            const std::uint32_t height,
+                            Format format,
+                            const std::uint32_t level) -> std::uint32_t
+{
+  const uint32_t level_width = std::max(width >> level, 1u);
+  const uint32_t level_height = std::max(height >> level, 1u);
+
+  const auto maybe_props = std::ranges::find_if(
+    properties,
+    [format](const TextureFormatProperties& p) { return p.format == format; });
+
+  if (maybe_props == properties.end() ||
+      maybe_props->format == Format::Invalid) {
+    return 0;
+  }
+
+  const auto props = *maybe_props;
+  if (!props.compressed) {
+    return props.bytes_per_block * level_width * level_height;
+  }
+
+  const uint32_t widthInBlocks =
+    (level_width + props.block_width - 1) / props.block_width;
+  const uint32_t heightInBlocks =
+    (level_height + props.block_height - 1) / props.block_height;
+  return widthInBlocks * heightInBlocks * props.bytes_per_block;
+}
+
+auto
+get_num_image_planes(Format format) -> std::uint32_t
+{
+  const auto maybe_props = std::ranges::find_if(
+    properties,
+    [format](const TextureFormatProperties& p) { return p.format == format; });
+
+  if (maybe_props == properties.end() ||
+      maybe_props->format == Format::Invalid) {
+    return 0;
+  }
+
+  return maybe_props->num_planes;
+}
+
+VkExtent2D
+getImagePlaneExtent(VkExtent2D plane0, Format format, uint32_t plane)
+{
+  switch (format) {
+    case Format::YUV_NV12:
+      return VkExtent2D{
+        .width = plane0.width >> plane,
+        .height = plane0.height >> plane,
+      };
+    case Format::YUV_420p:
+      return VkExtent2D{
+        .width = plane0.width >> (plane ? 1 : 0),
+        .height = plane0.height >> (plane ? 1 : 0),
+      };
+    default:
+      return plane0;
+  }
+}
+
+auto
+getTextureBytesPerPlane(const std::uint32_t width,
+                        const std::uint32_t height,
+                        Format format,
+                        std::uint32_t plane) -> std::uint32_t
+{
+  const TextureFormatProperties props = *std::ranges::find_if(
+    properties,
+    [format](const TextureFormatProperties& p) { return p.format == format; });
+
+  assert(plane < props.num_planes);
+
+  switch (format) {
+    case Format::YUV_NV12:
+      return width * height / (plane + 1);
+    case Format::YUV_420p:
+      return width * height / (plane ? 4 : 1);
+    default:;
+  }
+
+  return get_texture_bytes_per_layer(width, height, format, 0);
+}
+
+void
+StagingAllocator::upload(VkTexture& image,
+                         const VkRect2D& imageRegion,
+                         std::uint32_t baseMipLevel,
+                         std::uint32_t numMipLevels,
+                         std::uint32_t,
+                         std::uint32_t numLayers,
+                         VkFormat format,
+                         const void* data,
+                         std::uint32_t bufferRowLength)
+{
+  // assert(numMipLevels <= LVK_MAX_MIP_LEVELS);
+
+  const Format texFormat = vk_format_to_format(format);
+
+  // divide the width and height by 2 until we get to the size of level
+  // 'baseMipLevel'
+  const std::uint32_t width = image.get_extent().width >> baseMipLevel;
+  const std::uint32_t height = image.get_extent().height >> baseMipLevel;
+  const bool coversFullImage = !imageRegion.offset.x && !imageRegion.offset.y &&
+                               imageRegion.extent.width == width &&
+                               imageRegion.extent.height == height;
+
+  // LVK_ASSERT(coversFullImage || image.vkImageLayout_ !=
+  // VK_IMAGE_LAYOUT_UNDEFINED);
+
+  // if (numMipLevels > 1 || numLayers > 1) {
+  //   LVK_ASSERT(!bufferRowLength);
+  //   LVK_ASSERT_MSG(coversFullImage, "Uploading mip-levels with an image
+  //   region that is smaller than the base mip-level is not supported");
+  // }
+
+  // find the storage size for all mip-levels being uploaded
+  std::uint32_t layerStorageSize = 0;
+  for (std::uint32_t i = 0; i < numMipLevels; ++i) {
+    const std::uint32_t mipSize = get_texture_bytes_per_layer(
+      bufferRowLength ? bufferRowLength : imageRegion.extent.width,
+      imageRegion.extent.height,
+      texFormat,
+      i);
+    layerStorageSize += mipSize;
+  }
+
+  const std::uint32_t storageSize = layerStorageSize * numLayers;
+
+  ensure_size(storageSize);
+
+  assert(storageSize <= staging_buffer_size);
+
+  auto desc = get_next_free_offset(storageSize);
+  // No support for copying image in multiple smaller chunk sizes. If we get
+  // smaller buffer size than storageSize, we will wait for GPU idle and get
+  // bigger chunk.
+  if (desc.size < storageSize) {
+    wait_and_reset();
+    desc = get_next_free_offset(storageSize);
+  }
+  assert(desc.size >= storageSize);
+
+  const auto& wrapper = context.immediate_commands->acquire();
+
+  auto* stagingBuffer = *context.get_buffer_pool().get(staging_buffer);
+
+  stagingBuffer->upload(
+    std::span(static_cast<const std::byte*>(data), storageSize), desc.offset);
+
+  std::uint32_t offset = 0;
+
+  const std::uint32_t numPlanes = get_num_image_planes(image.get_format());
+
+  // if (numPlanes > 1) {
+  //   LVK_ASSERT(layer == 0 && baseMipLevel == 0);
+  //   LVK_ASSERT(numLayers == 1 && numMipLevels == 1);
+  //   LVK_ASSERT(imageRegion.offset.x == 0 && imageRegion.offset.y == 0);
+  //   LVK_ASSERT(image.vkType_ == VK_IMAGE_TYPE_2D);
+  //   LVK_ASSERT(image.vkExtent_.width == imageRegion.extent.width &&
+  //   image.vkExtent_.height == imageRegion.extent.height);
+  // }
+
+  VkImageAspectFlags imageAspect = VK_IMAGE_ASPECT_COLOR_BIT;
+
+  if (numPlanes == 2) {
+    imageAspect = VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT;
+  }
+  if (numPlanes == 3) {
+    imageAspect = VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT |
+                  VK_IMAGE_ASPECT_PLANE_2_BIT;
+  }
+
+  // https://registry.khronos.org/KTX/specs/1.0/ktxspec.v1.html
+  for (std::uint32_t mipLevel = 0; mipLevel < numMipLevels; ++mipLevel) {
+    for (std::uint32_t l = 0; l != numLayers; l++) {
+      const std::uint32_t currentMipLevel = baseMipLevel + mipLevel;
+
+      // LVK_ASSERT(currentMipLevel < image.numLevels_);
+      // LVK_ASSERT(mipLevel < image.numLevels_);
+
+      // 1. Transition initial image layout into TRANSFER_DST_OPTIMAL
+      imageMemoryBarrier2(
+        wrapper.command_buffer,
+        image.get_image(),
+        StageAccess{ .stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+                     .access = VK_ACCESS_2_NONE },
+        StageAccess{ .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                     .access = VK_ACCESS_2_TRANSFER_WRITE_BIT },
+        coversFullImage ? VK_IMAGE_LAYOUT_UNDEFINED : image.get_layout(),
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VkImageSubresourceRange{ imageAspect, currentMipLevel, 1, l, 1 });
+
+      // 2. Copy the pixel data from the staging buffer into the image
+      std::uint32_t planeOffset = 0;
+      for (std::uint32_t plane = 0; plane != numPlanes; plane++) {
+        const VkExtent2D extent = getImagePlaneExtent(
+          {
+            .width = std::max(1u, imageRegion.extent.width >> mipLevel),
+            .height = std::max(1u, imageRegion.extent.height >> mipLevel),
+          },
+          vk_format_to_format(format),
+          plane);
+        const VkRect2D region = {
+          .offset = { .x = imageRegion.offset.x >> mipLevel,
+                      .y = imageRegion.offset.y >> mipLevel },
+          .extent = extent,
+        };
+        const VkBufferImageCopy copy = {
+          // the offset for this level is at the start of all mip-levels plus
+          // the size of all previous mip-levels being uploaded
+          .bufferOffset = desc.offset + offset + planeOffset,
+          .bufferRowLength = bufferRowLength,
+          .bufferImageHeight = 0,
+          .imageSubresource =
+            VkImageSubresourceLayers{ numPlanes > 1
+                                        ? VK_IMAGE_ASPECT_PLANE_0_BIT << plane
+                                        : imageAspect,
+                                      currentMipLevel,
+                                      l,
+                                      1 },
+          .imageOffset = { .x = region.offset.x, .y = region.offset.y, .z = 0 },
+          .imageExtent = { .width = region.extent.width,
+                           .height = region.extent.height,
+                           .depth = 1u },
+        };
+        vkCmdCopyBufferToImage(wrapper.command_buffer,
+                               stagingBuffer->get_buffer(),
+                               image.get_image(),
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               1,
+                               &copy);
+        planeOffset += getTextureBytesPerPlane(imageRegion.extent.width,
+                                               imageRegion.extent.height,
+                                               vk_format_to_format(format),
+                                               plane);
+      }
+
+      // 3. Transition TRANSFER_DST_OPTIMAL into SHADER_READ_ONLY_OPTIMAL
+      imageMemoryBarrier2(
+        wrapper.command_buffer,
+        image.get_image(),
+        StageAccess{ .stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                     .access = VK_ACCESS_2_TRANSFER_WRITE_BIT },
+        StageAccess{ .stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                     .access = VK_ACCESS_2_MEMORY_READ_BIT |
+                               VK_ACCESS_2_MEMORY_WRITE_BIT },
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VkImageSubresourceRange{ imageAspect, currentMipLevel, 1, l, 1 });
+
+      offset += get_texture_bytes_per_layer(imageRegion.extent.width,
+                                            imageRegion.extent.height,
+                                            texFormat,
+                                            currentMipLevel);
+    }
+  }
+
+  image.set_layout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+  desc.handle = context.immediate_commands->submit(wrapper);
+  regions.push_back(desc);
+}
+
+void
+StagingAllocator::ensure_size(std::uint32_t sizeNeeded)
+{
+  const auto alignedSize = std::max(
+    get_aligned_size(sizeNeeded, staging_buffer_alignment), min_buffer_size);
+
+  const auto found_max = alignedSize < max_staging_buffer_size
+                           ? alignedSize
+                           : max_staging_buffer_size;
+  sizeNeeded = static_cast<std::uint32_t>(found_max);
+
+  if (!staging_buffer.empty()) {
+    const bool is_enough_size = sizeNeeded <= staging_buffer_size;
+    const bool is_max_size = staging_buffer_size == max_staging_buffer_size;
+
+    if (is_enough_size || is_max_size) {
+      return;
+    }
+  }
+
+  wait_and_reset();
+
+  // deallocate the previous staging buffer
+  staging_buffer = nullptr;
+
+  // if the combined size of the new staging buffer and the existing one is
+  // larger than the limit imposed by some architectures on buffers that are
+  // device and host visible, we need to wait for the current buffer to be
+  // destroyed before we can allocate a new one
+  if ((sizeNeeded + staging_buffer_size) > max_staging_buffer_size) {
+    context.process_callbacks();
+  }
+
+  staging_buffer_size = sizeNeeded;
+
+  auto name = std::format("Staging Buffer {}", staging_buffer_count++);
+
+  staging_buffer = VkDataBuffer::create(
+    context,
+    {
+      .size = staging_buffer_size,
+      .storage = StorageType::DeviceLocal,
+      .usage = BufferUsageFlags::TransferDst | BufferUsageFlags::TransferSrc,
+      .debug_name = name,
+    });
+
+  assert(!staging_buffer.empty());
+
+  regions.clear();
+  regions.push_back({ 0, staging_buffer_size, SubmitHandle() });
+}
+
+StagingAllocator::MemoryRegionDescription
+StagingAllocator::get_next_free_offset(uint32_t size)
+{
+  const auto requestedAlignedSize =
+    get_aligned_size(size, staging_buffer_alignment);
+
+  ensure_size(static_cast<std::uint32_t>(requestedAlignedSize));
+
+  assert(!regions.empty());
+
+  // if we can't find an available region that is big enough to store
+  // requestedAlignedSize, return whatever we could find, which will be stored
+  // in bestNextIt
+  auto bestNextIt = regions.begin();
+
+  for (auto it = regions.begin(); it != regions.end(); ++it) {
+    if (context.immediate_commands->is_ready(it->handle)) {
+      // This region is free, but is it big enough?
+      if (it->size >= requestedAlignedSize) {
+        // It is big enough!
+        const auto unusedSize = it->size - requestedAlignedSize;
+        const auto unusedOffset = it->offset + requestedAlignedSize;
+
+        // Return this region and add the remaining unused size to the regions
+        // deque
+        SCOPE_EXIT
+        {
+          regions.erase(it);
+          if (unusedSize > 0) {
+            regions.insert(regions.begin(),
+                           { unusedOffset, unusedSize, SubmitHandle() });
+          }
+        };
+
+        return { it->offset, requestedAlignedSize, SubmitHandle() };
+      }
+      // cache the largest available region that isn't as big as the one we're
+      // looking for
+      if (it->size > bestNextIt->size) {
+        bestNextIt = it;
+      }
+    }
+  }
+
+  // we found a region that is available that is smaller than the requested
+  // size. It's the best we can do
+  if (bestNextIt != regions.end() &&
+      context.immediate_commands->is_ready(bestNextIt->handle)) {
+    SCOPE_EXIT
+    {
+      regions.erase(bestNextIt);
+    };
+
+    return { bestNextIt->offset, bestNextIt->size, SubmitHandle() };
+  }
+
+  // nothing was available. Let's wait for the entire staging buffer to become
+  // free
+  wait_and_reset();
+
+  // waitAndReset() adds a region that spans the entire buffer. Since we'll be
+  // using part of it, we need to replace it with a used block and an unused
+  // portion
+  regions.clear();
+
+  // store the unused size in the deque first...
+  const uint64_t unusedSize = staging_buffer_size > requestedAlignedSize
+                                ? staging_buffer_size - requestedAlignedSize
+                                : 0;
+
+  if (unusedSize) {
+    const uint64_t unusedOffset = staging_buffer_size - unusedSize;
+    regions.insert(regions.begin(),
+                   { unusedOffset, unusedSize, SubmitHandle() });
+  }
+
+  // ...and then return the smallest free region that can hold the requested
+  // size
+  return {
+    .offset = 0,
+    .size = staging_buffer_size - unusedSize,
+    .handle = SubmitHandle(),
+  };
+}
+
+void
+StagingAllocator::wait_and_reset()
+{
+  for (const auto& r : regions) {
+    context.immediate_commands->wait(r.handle);
+  };
+
+  regions.clear();
+  regions.push_back({ 0, staging_buffer_size, SubmitHandle() });
+}
+
+#pragma endregion StagingAllocator
 
 } // namespace VkBindless

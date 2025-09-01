@@ -115,12 +115,12 @@ public:
       return unexpected<PoolError>(PoolError::StaleHandle);
     }
 
-    return &objects[index];
+    return &objects.at(index);
   }
 
   [[nodiscard]] auto get(const Holder<Handle<ObjectType>>& holder)
   {
-    return get(static_cast<Handle<ObjectType>>(holder));
+    return get(*holder);
   }
 
   [[nodiscard]] auto get(Handle<ObjectType> handle) const

@@ -87,6 +87,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         spirv-reflect-static
         meshoptimizer::meshoptimizer
         assimp::assimp
+        stb::stb
         PUBLIC
         glm::glm
         imgui::imgui

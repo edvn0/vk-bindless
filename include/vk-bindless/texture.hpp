@@ -83,6 +83,8 @@ public:
   VkTexture() = default;
   VkTexture(IContext&, const VkTextureDescription&);
 
+  static auto from_file(IContext&, std::string_view,const VkTextureDescription&) -> Holder<TextureHandle>;
+  static auto from_memory(IContext&, std::span<const std::uint8_t>,const VkTextureDescription&) -> Holder<TextureHandle>;
   static auto create(IContext&, const VkTextureDescription&)
     -> Holder<TextureHandle>;
 
@@ -118,6 +120,10 @@ public:
   {
     return std::span(cached_framebuffer_views);
   }
+  [[nodiscard]] auto get_mip_layer_views() const -> std::span<const VkImageView>
+  {
+    return std::span(mip_layer_views);
+  }
 
   auto get_or_create_framebuffer_view(IContext&,
                                       std::uint32_t mip,
@@ -130,10 +136,14 @@ public:
     return is_swapchain;
   }
 
+  [[nodiscard]] auto get_layout() const -> VkImageLayout { return current_layout; }
+  auto set_layout(const VkImageLayout layout) -> void { current_layout = layout; }
+
 private:
   VkImageView image_view{ VK_NULL_HANDLE };
   VkImageView storage_image_view{ VK_NULL_HANDLE };
   VkSampler sampler{ VK_NULL_HANDLE };
+  VkImageLayout current_layout{ VK_IMAGE_LAYOUT_UNDEFINED };
   VkSampleCountFlagBits sample_count{ VK_SAMPLE_COUNT_1_BIT };
   VkImageAspectFlags image_aspect_flags{ VK_IMAGE_ASPECT_COLOR_BIT };
   VkExtent3D extent{ 1, 1, 1 };

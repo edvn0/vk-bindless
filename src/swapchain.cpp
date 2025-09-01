@@ -412,10 +412,10 @@ Swapchain::~Swapchain()
     }
   }
   vkDestroySwapchainKHR(context_ref.get_device(), swapchain_khr, nullptr);
-  for (VkSemaphore sem : acquire_semaphores) {
+  for (const VkSemaphore sem : acquire_semaphores) {
     vkDestroySemaphore(context_ref.get_device(), sem, nullptr);
   }
-  for (VkFence fence : present_fences) {
+  for (const VkFence fence : present_fences) {
     if (fence)
       vkDestroyFence(context_ref.get_device(), fence, nullptr);
   }

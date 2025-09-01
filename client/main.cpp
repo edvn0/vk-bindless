@@ -450,10 +450,6 @@ run_main() -> void
     return;
   }
   auto vulkan_context = std::move(context.value());
-  SCOPE_EXIT
-  {
-    vulkan_context.reset();
-  };
 
   auto duck_mesh = *Mesh::create(*vulkan_context, "assets/meshes/Duck.glb");
 
@@ -527,7 +523,7 @@ run_main() -> void
     });
 
   // Offscreen textures: MSAA color, resolved single-sample color, MSAA depth
-  auto null_k_bytes = [](auto k = 0) {
+  constexpr auto null_k_bytes = [](auto k = 0) {
     return std::vector<std::byte>(k, std::byte{ 0 });
   };
 
@@ -555,7 +551,7 @@ run_main() -> void
   };
 
   auto null_ubo = null_k_bytes(align_size(sizeof(UBO), 16));
-  auto main_ubo = FrameUniform<3>::create(*vulkan_context, null_ubo);
+  auto main_ubo = FrameUniform<1>::create(*vulkan_context, null_ubo);
 
   // Create ImGui renderer
   auto imgui = std::make_unique<ImGuiRenderer>(
@@ -730,7 +726,7 @@ run_main() -> void
       .proj = projection,
       .camera_position = glm::vec4(camera.get_position(), 1.0F),
       .light_direction = glm::vec4(dir, 0.0f),
-      .texture = 0,
+      .texture = duck_mesh.get_mesh_data().material.albedo_texture,
       .cube_texture = 0,
     };
     main_ubo.upload(*vulkan_context, std::span{ &ubo_data, 1 });
@@ -933,6 +929,15 @@ run_main() -> void
     const auto result = vulkan_context->submit(buf, swapchain_texture);
     (void)result; // handle errors as needed
   }
+
+  for (auto& handle : main_ubo.buffers) {
+    handle.reset();
+    handle = {};
+  }
+  imgui.reset();
+  color_msaa.reset();
+  color_resolved.reset();
+  depth_msaa.reset();
 }
 
 auto
