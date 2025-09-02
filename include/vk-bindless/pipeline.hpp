@@ -12,22 +12,46 @@
 
 namespace VkBindless {
 
+struct ComputePipelineDescription
+{
+  ShaderModuleHandle shader;
+  SpecialisationConstantDescription specialisation_constants{};
+  std::string entry_point {"main"};
+  std::string debug_name{};
+};
+
 class VkComputePipeline
 {
-private:
+  VkPipeline pipeline{ VK_NULL_HANDLE };
   VkPipelineLayout layout{ VK_NULL_HANDLE };
   VkShaderStageFlags stage_flags{ VK_SHADER_STAGE_COMPUTE_BIT };
+
+  ComputePipelineDescription description{};
+
+  VkDescriptorSetLayout descriptor_set_layout{ VK_NULL_HANDLE };
+  VkDescriptorSetLayout last_descriptor_set_layout{ VK_NULL_HANDLE };
+
+  std::unique_ptr<std::byte[]> specialisation_constants_storage{ nullptr };
+
+  friend class CommandBuffer;
+  friend class Context;
 
 public:
   [[nodiscard]] auto get_layout() const -> const VkPipelineLayout&
   {
     return layout;
   }
-
   [[nodiscard]] auto get_stage_flags() const -> const VkShaderStageFlags&
   {
     return stage_flags;
   }
+  [[nodiscard]] auto get_pipeline() const -> const VkPipeline&
+  {
+    return pipeline;
+  }
+
+  static auto create(IContext* context, const ComputePipelineDescription& desc)
+    -> Holder<ComputePipelineHandle>;
 };
 
 struct GraphicsPipelineDescription
@@ -44,8 +68,8 @@ struct GraphicsPipelineDescription
   PolygonMode polygon_mode = PolygonMode::Fill;
   StencilState back_face_stencil = {};
   StencilState front_face_stencil = {};
-  uint32_t sample_count = 1u;
-  uint32_t patch_control_points = 0;
+  std::uint32_t sample_count = 1u;
+  std::uint32_t patch_control_points = 0;
   float min_sample_shading = 0.0f;
   std::string debug_name{};
 

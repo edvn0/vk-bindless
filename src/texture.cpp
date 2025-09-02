@@ -13,7 +13,19 @@
 #include <vulkan/vulkan_core.h>
 
 #define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
+
 #include <stb_image.h>
+#include <stb_image_write.h>
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
 
 namespace VkBindless {
 
@@ -402,6 +414,20 @@ VkTexture::create_image_view(const VkDevice device,
   copy.image = image;
   copy.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
   VK_VERIFY(vkCreateImageView(device, &copy, nullptr, &image_view));
+}
+auto
+VkTexture::write_hdr(std::string_view path,
+                     const std::uint32_t width,
+                     const std::uint32_t height,
+                     const std::span<const float> data) -> bool
+{
+  return stbi_write_hdr(
+        path.data(),
+      width,
+      height,
+      4, // 4 components
+      data.data()
+    );
 }
 
 auto

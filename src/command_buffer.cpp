@@ -420,6 +420,42 @@ CommandBuffer::cmd_draw_indexed(std::uint32_t index_count,
                    vertex_offset,
                    base_instance);
 }
+auto
+CommandBuffer::cmd_dispatch_thread_groups(const Dimensions& xyz) -> void
+{
+  const auto x = std::max(xyz.width, 1u);
+  const auto y = std::max(xyz.height, 1u);
+  const auto z = std::max(xyz.depth, 1u);
+  vkCmdDispatch(wrapper->command_buffer, x, y, z);
+}
+
+auto
+CommandBuffer::cmd_bind_compute_pipeline(ComputePipelineHandle handle) -> void
+{
+  if (handle.empty()) {
+    return;
+  }
+
+  current_pipeline_compute = handle;
+
+  const auto* pipeline = *context->compute_pipeline_pool.get(handle);
+
+  assert(pipeline);
+
+  const auto vk_pipeline = context->get_pipeline(handle);
+
+  assert(vk_pipeline != VK_NULL_HANDLE);
+
+  if (last_pipeline_bound != vk_pipeline) {
+    last_pipeline_bound = vk_pipeline;
+    vkCmdBindPipeline(
+      wrapper->command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, vk_pipeline);
+    context->bind_default_descriptor_sets(wrapper->command_buffer,
+                                          VK_PIPELINE_BIND_POINT_COMPUTE,
+                                          pipeline->get_layout());
+  }
+}
+
 
 auto
 CommandBuffer::cmd_bind_graphics_pipeline(const GraphicsPipelineHandle handle)
@@ -461,8 +497,6 @@ CommandBuffer::cmd_bind_graphics_pipeline(const GraphicsPipelineHandle handle)
 auto
 CommandBuffer::cmd_push_constants(const std::span<const std::byte> data) -> void
 {
-  assert(is_rendering && "Push constants can only be called during rendering");
-
   const auto device_limits =
     context->vulkan_properties.base.limits.maxPushConstantsSize;
   if (data.empty() || data.size_bytes() % 4 != 0 ||

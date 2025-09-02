@@ -192,6 +192,7 @@ public:
                             nullptr);
   }
   auto get_pipeline(GraphicsPipelineHandle, std::uint32_t) -> VkPipeline;
+  auto get_pipeline(ComputePipelineHandle) -> VkPipeline;
 
 private:
   vkb::Instance vkb_instance{};

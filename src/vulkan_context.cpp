@@ -24,6 +24,31 @@
 
 namespace VkBindless {
 
+static constexpr auto get_aligned_size =
+  [](const auto size, const auto alignment) -> VkDeviceSize {
+  return (size + alignment - 1) & ~(alignment - 1);
+};
+
+static constexpr auto get_pipeline_specialisation_info =
+  [](const SpecialisationConstantDescription& d, auto& spec_entries) {
+    const auto num_entries = d.get_specialisation_constants_count();
+    for (auto i = 0U; i < num_entries; ++i) {
+      const auto& [constant_id, offset, size] = d.entries.at(i);
+      spec_entries[i] = VkSpecializationMapEntry{
+        .constantID = constant_id,
+        .offset = offset,
+        .size = size,
+      };
+    }
+
+    return VkSpecializationInfo{
+      .mapEntryCount = num_entries,
+      .pMapEntries = spec_entries.data(),
+      .dataSize = d.data.size_bytes(),
+      .pData = d.data.data(),
+    };
+  };
+
 auto
 format_to_vk_format(const Format format) -> VkFormat
 {
@@ -570,6 +595,9 @@ Context::create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
   VkPhysicalDeviceVulkan11Features vk11_features{};
   vk11_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
   vk11_features.shaderDrawParameters = VK_TRUE;
+  vk11_features.storageBuffer16BitAccess = VK_TRUE;
+  vk11_features.uniformAndStorageBuffer16BitAccess = VK_TRUE;
+  vk11_features.storagePushConstant16 = VK_TRUE;
 
   VkPhysicalDeviceVulkan12Features vk12_features{};
   vk12_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
@@ -1234,6 +1262,102 @@ Context::get_current_swapchain_texture() -> TextureHandle
 }
 
 auto
+Context::get_pipeline(ComputePipelineHandle handle) -> VkPipeline
+{
+  auto* cps = *compute_pipeline_pool.get(handle);
+
+  if (!cps) {
+    return VK_NULL_HANDLE;
+  }
+
+  update_resource_bindings();
+
+  if (cps->last_descriptor_set_layout != descriptor_set_layout) {
+    pre_frame_task([l = cps->get_layout()](auto dev, auto callbacks) {
+      vkDestroyPipelineLayout(dev, l, callbacks);
+    });
+    pre_frame_task([p = cps->get_pipeline()](auto dev, auto callbacks) {
+      vkDestroyPipeline(dev, p, callbacks);
+    });
+    cps->pipeline = VK_NULL_HANDLE;
+    cps->layout = VK_NULL_HANDLE;
+    cps->last_descriptor_set_layout = descriptor_set_layout;
+  }
+
+  if (cps->pipeline == VK_NULL_HANDLE) {
+    const auto* sm = *shader_module_pool.get(cps->description.shader);
+
+    std::array<VkSpecializationMapEntry,
+               SpecialisationConstantDescription::max_specialization_constants>
+      entries = {};
+
+    const VkSpecializationInfo siComp = get_pipeline_specialisation_info(
+      cps->description.specialisation_constants, entries);
+
+    // create pipeline layout
+    {
+      // duplicate for MoltenVK
+      const std::array dsls = { descriptor_set_layout,
+                                descriptor_set_layout,
+                                descriptor_set_layout,
+                                descriptor_set_layout };
+      const VkPushConstantRange range = {
+        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+        .offset = 0,
+        .size = static_cast<uint32_t>(
+          get_aligned_size(sm->get_push_constant_info().first, 16)),
+      };
+      const VkPipelineLayoutCreateInfo ci = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = static_cast<uint32_t>(dsls.size()),
+        .pSetLayouts = dsls.data(),
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &range,
+      };
+      vkCreatePipelineLayout(get_device(), &ci, nullptr, &cps->layout);
+      set_name_for_object(
+        get_device(),
+        VK_OBJECT_TYPE_PIPELINE_LAYOUT,
+        cps->get_layout(),
+        std::format("Compute Pipeline Layout {}", cps->description.debug_name));
+    }
+
+    auto maybe_module = std::ranges::find_if(
+      sm->get_modules(), [entry = cps->description.entry_point](auto m) {
+        return m.entry_name == entry;
+      });
+    assert(maybe_module != sm->get_modules().end());
+    auto module = *maybe_module;
+
+    VkPipelineShaderStageCreateInfo psci{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+      .flags = 0,
+      .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+      .module = module.module,
+      .pName = module.entry_name.c_str(),
+      .pSpecializationInfo = &siComp,
+    };
+    const VkComputePipelineCreateInfo ci = {
+      .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+      .flags = 0,
+      .stage = psci,
+      .layout = cps->layout,
+      .basePipelineHandle = VK_NULL_HANDLE,
+      .basePipelineIndex = -1,
+    };
+    vkCreateComputePipelines(
+      get_device(), nullptr, 1, &ci, nullptr, &cps->pipeline);
+    set_name_for_object(
+      get_device(),
+      VK_OBJECT_TYPE_PIPELINE,
+      cps->get_pipeline(),
+      std::format("Compute Pipeline {}", cps->description.debug_name));
+  }
+
+  return cps->pipeline;
+}
+
+auto
 Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask)
   -> VkPipeline
 {
@@ -1346,37 +1470,12 @@ Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask)
              SpecialisationConstantDescription::max_specialization_constants>
     entries{};
 
-  static constexpr auto get_pipeline_specialisation_info =
-    [](const SpecialisationConstantDescription& d, auto& spec_entries) {
-      const auto num_entries = d.get_specialisation_constants_count();
-      for (auto i = 0U; i < num_entries; ++i) {
-        const auto& [constant_id, offset, size] = d.entries.at(i);
-        spec_entries[i] = VkSpecializationMapEntry{
-          .constantID = constant_id,
-          .offset = offset,
-          .size = size,
-        };
-      }
-
-      return VkSpecializationInfo{
-        .mapEntryCount = num_entries,
-        .pMapEntries = spec_entries.data(),
-        .dataSize = d.data.size_bytes(),
-        .pData = d.data.data(),
-      };
-    };
-
   const VkSpecializationInfo si =
     get_pipeline_specialisation_info(desc.specialisation_constants, entries);
 
   // create pipeline layout
   {
     auto&& [size, flags] = shader->get_push_constant_info();
-
-    static constexpr auto get_aligned_size = [](const auto s,
-                                                const auto alignment) {
-      return (s + alignment - 1) & ~(alignment - 1);
-    };
 
     // duplicate for MoltenVK
     const VkDescriptorSetLayout dsls[] = { descriptor_set_layout,
@@ -1739,9 +1838,28 @@ Context::destroy(QueryPoolHandle) -> void
 }
 
 auto
-Context::destroy(ComputePipelineHandle) -> void
+Context::destroy(const ComputePipelineHandle handle) -> void
 {
-  TODO("Implement compute pipeline destruction");
+  if (!handle.valid()) {
+    return;
+  }
+
+  const auto maybe_pipeline = get_compute_pipeline_pool().get(handle);
+  if (!maybe_pipeline.has_value()) {
+    return;
+  }
+
+  auto* pipeline = maybe_pipeline.value();
+  if (pipeline == nullptr) {
+    return;
+  }
+
+  pre_frame_task(
+    [ptr = pipeline->get_pipeline(),
+     layout = pipeline->get_layout()](auto device, auto* allocation_callbacks) {
+      vkDestroyPipeline(device, ptr, allocation_callbacks);
+      vkDestroyPipelineLayout(device, layout, allocation_callbacks);
+    });
 }
 
 auto
@@ -1821,11 +1939,6 @@ Context::destroy(const ShaderModuleHandle handle) -> void
 #pragma endregion Destroyers
 
 #pragma region StagingAllocator
-
-static constexpr auto get_aligned_size =
-  [](const auto size, const auto alignment) -> VkDeviceSize {
-  return (size + alignment - 1) & ~(alignment - 1);
-};
 
 static constexpr auto max_staging_buffer_size =
   256ULL * 1024ULL * 1024ULL; // 256MB

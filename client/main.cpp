@@ -9,6 +9,7 @@
 #include "vk-bindless/shader.hpp"
 #include "vk-bindless/transitions.hpp"
 #include "vk-bindless/vulkan_context.hpp"
+
 #include <imgui.h>
 
 #define GLFW_INCLUDE_VULKAN
@@ -482,6 +483,94 @@ run_main() -> void
                              EventSystem::KeyEvent,
                              EventSystem::MouseButtonEvent>(game_handler);
   event_dispatcher.subscribe<EventSystem::KeyEvent>(ui_handler);
+
+  {
+    auto brdf_lut_compute_shader = VkShader::create(
+      vulkan_context.get(), "assets/shaders/brdf_lut_compute.shader");
+
+    constexpr auto brdf_width = 512;
+    constexpr auto brdf_height = 512;
+    constexpr auto brdf_monte_carlo_sample_count = 1024;
+    constexpr auto brdf_buffer_size =
+      4ULL * sizeof(std::uint16_t) * brdf_width * brdf_height;
+    (void)brdf_buffer_size;
+
+    auto span = std::span{ &brdf_monte_carlo_sample_count,
+                           sizeof(brdf_monte_carlo_sample_count) };
+
+    auto brdf_lut_pipeline = VkComputePipeline::create(
+      vulkan_context.get(),
+        {
+          .shader = *brdf_lut_compute_shader,
+          .specialisation_constants = {
+            .entries =
+            {
+              SpecialisationConstantDescription::SpecialisationConstantEntry {
+               .constant_id = 0,
+               .offset = 0,
+               .size = sizeof(brdf_monte_carlo_sample_count),
+             },
+            },
+            .data = std::as_bytes(span),
+            },
+          .entry_point = "main",
+          .debug_name = "BRDF LUT Compute Pipeline",
+        });
+
+    auto buffer = VkDataBuffer::create(
+      *vulkan_context,
+      {
+        .data = {},
+        .size = brdf_buffer_size,
+        .storage = StorageType::DeviceLocal,
+        .usage = BufferUsageFlags::StorageBuffer | BufferUsageFlags::TransferDst,
+        .debug_name = "BRDF LUT Buffer",
+      });
+
+    auto& buf = vulkan_context->acquire_command_buffer();
+    buf.cmd_bind_compute_pipeline(*brdf_lut_pipeline);
+    struct {
+      uint32_t w = brdf_width;
+      uint32_t h = brdf_height;
+      uint64_t addr;
+      std::array<uint64_t, 6> _pad;
+    } pc {
+      .w = brdf_width,
+      .h = brdf_height,
+      .addr = vulkan_context->get_device_address(*buffer),
+    };
+    static_assert(sizeof(decltype(pc)) == 64);
+    buf.cmd_push_constants<decltype(pc)>(pc, 0);
+    buf.cmd_dispatch_thread_groups({ brdf_width / 16, brdf_height / 16, 1 });
+
+    vulkan_context->wait_for(*vulkan_context->submit(buf, {}));
+
+    auto vector = std::vector<std::byte>(brdf_buffer_size);
+
+    auto source_span = std::span{ std::bit_cast<std::byte*>(vulkan_context->get_mapped_pointer(*buffer)),
+                                 brdf_buffer_size};
+
+    std::ranges::copy_n(source_span.begin(), vector.size(), std::as_writable_bytes(std::span(vector)).begin());
+
+    auto src_ptr = reinterpret_cast<const std::uint16_t*>(vector.data());
+    auto float_data = std::vector<float>(brdf_width * brdf_height * 4);
+    for (std::size_t i = 0; i < brdf_width * brdf_height * 4; ++i) {
+      // Convert uint16 to normalized float [0.0, 1.0]
+      float_data[i] = static_cast<float>(src_ptr[i]) / 65535.0f;
+    }
+
+
+    auto hdr_success = VkTexture::write_hdr(
+      "brdf_lut.hdr",
+      brdf_width,
+      brdf_height,
+      std::span (float_data)
+    );
+
+    if (hdr_success) {
+      std::cout << "BRDF LUT saved successfully as brdf_lut.hdr\n";
+    }
+  }
 
   std::int32_t new_width = 0;
   std::int32_t new_height = 0;

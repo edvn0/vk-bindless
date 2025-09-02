@@ -139,6 +139,11 @@ public:
   [[nodiscard]] auto get_layout() const -> VkImageLayout { return current_layout; }
   auto set_layout(const VkImageLayout layout) -> void { current_layout = layout; }
 
+  static auto write_hdr(std::string_view path,
+                        std::uint32_t width,
+                        std::uint32_t height,
+                        std::span<const float> data) -> bool;
+
 private:
   VkImageView image_view{ VK_NULL_HANDLE };
   VkImageView storage_image_view{ VK_NULL_HANDLE };

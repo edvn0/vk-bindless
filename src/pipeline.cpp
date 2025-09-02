@@ -191,6 +191,29 @@ vertex_format_to_vk_format(VertexFormat fmt)
 }
 
 auto
+VkComputePipeline::create(IContext* context,
+                          const ComputePipelineDescription& desc)
+  -> Holder<ComputePipelineHandle>
+{
+  VkComputePipeline cps{};
+  cps.description = desc;
+  cps.stage_flags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+  if (!desc.specialisation_constants.data.empty()) {
+    cps.specialisation_constants_storage = std::make_unique<std::byte[]>(
+      desc.specialisation_constants.data.size_bytes());
+    std::memcpy(cps.specialisation_constants_storage.get(),
+                desc.specialisation_constants.data.data(),
+                desc.specialisation_constants.data.size_bytes());
+    cps.description.specialisation_constants.data =
+      std::span<std::byte>(cps.specialisation_constants_storage.get(),
+                           desc.specialisation_constants.data.size_bytes());
+  }
+
+  return Holder{ context,
+                 context->get_compute_pipeline_pool().create(std::move(cps)) };
+}
+auto
 VkGraphicsPipeline::get_stage_flags() const -> VkShaderStageFlags
 {
   return stage_flags;
@@ -219,7 +242,8 @@ VkGraphicsPipeline::create(IContext* context,
   std::bitset<VertexInput::input_bindings_max_count> used_bindings{};
   pipeline.attribute_count = vertex_input.get_attributes_count();
   for (auto i = 0U; i < pipeline.attribute_count; ++i) {
-    const auto& [location, binding, format, offset] = vertex_input.attributes[i];
+    const auto& [location, binding, format, offset] =
+      vertex_input.attributes[i];
     assert(format != VertexFormat::Invalid);
 
     pipeline.attributes.at(i) = VkVertexInputAttributeDescription{
@@ -234,10 +258,9 @@ VkGraphicsPipeline::create(IContext* context,
       pipeline.bindings.at(pipeline.binding_count) =
         VkVertexInputBindingDescription{
           .binding = binding,
-          .stride =
-            vertex_input.input_bindings[binding]
-              .stride,
-          .inputRate = vertex_input.input_bindings[binding].rate == VertexInput::VertexInputBinding::Rate::Vertex
+          .stride = vertex_input.input_bindings[binding].stride,
+          .inputRate = vertex_input.input_bindings[binding].rate ==
+                           VertexInput::VertexInputBinding::Rate::Vertex
                          ? VK_VERTEX_INPUT_RATE_VERTEX
                          : VK_VERTEX_INPUT_RATE_INSTANCE,
         };
