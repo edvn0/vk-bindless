@@ -14,16 +14,42 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
+
 #ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4996)
+  #pragma warning(push)
+  #pragma warning(disable: 4996)
 #endif
 
 #include <stb_image.h>
-#include <stb_image_write.h>
 
 #ifdef _MSC_VER
-#pragma warning(pop)
+  #pragma warning(pop)
+#endif
+
+#ifdef _MSC_VER
+  #define STBIW_SPRINTF sprintf_s
+  #pragma warning(push)
+  #pragma warning(disable: 4996)
+#endif
+
+#if defined(__clang__)
+  #pragma clang diagnostic push
+  #pragma clang diagnostic ignored "-Wmissing-field-initializers"
+#elif defined(__GNUC__)
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif
+
+#include <stb_image_write.h>
+
+#if defined(__clang__)
+  #pragma clang diagnostic pop
+#elif defined(__GNUC__)
+  #pragma GCC diagnostic pop
+#endif
+
+#ifdef _MSC_VER
+  #pragma warning(pop)
 #endif
 
 
@@ -174,7 +200,7 @@ VkTexture::VkTexture(IContext& ctx, const VkTextureDescription& description)
   mip_layer_views.resize(mip_levels * array_layers);
 
   // Less than two views means just one view for the entire image
-  if (const auto has_only_one_view = mip_levels == 1 && array_layers == 1) {
+  if (mip_levels == 1 && array_layers == 1) {
     mip_layer_views.at(0) = image_view;
   } else {
     for (auto mip = 0U; mip < mip_levels; ++mip) {

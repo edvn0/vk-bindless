@@ -381,7 +381,7 @@ find_all_compute_stages(const ParsedShader& parsed)
 {
   std::vector<const ShaderEntry*> compute_entries;
 
-  for (const auto& entry : parsed.entries) {
+  for (const ShaderEntry& entry : parsed.entries) {
     if (entry.stage == ShaderStage::compute) {
       compute_entries.push_back(&entry);
     }

@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <iostream>
 #include <meshoptimizer.h>
+#include <ranges>
 #include <stb_image.h>
 #include <stdexcept>
 
@@ -180,19 +181,18 @@ LodGenerator::process_assimp_mesh(const aiScene* scene, const aiMesh* ai_mesh)
        ctx = context,
        &m = mesh.material] {
         auto tex = VkTexture::from_memory(
-            *ctx,
-            std::span(data.rgba),
-            VkTextureDescription{
-              .format = Format::RGBA_UN8,
-              .extent = { static_cast<std::uint32_t>(data.width),
-                          static_cast<std::uint32_t>(data.height),
-                          1 },
-              .usage_flags = TextureUsageFlags::Sampled |
-                             TextureUsageFlags::TransferDestination,
-              .debug_name = std::format("MemoryLoaded_{}", name),
-            });
-        const auto tex_handle = ts.emplace_back(
-          std::move(tex)).index();
+          *ctx,
+          std::span(data.rgba),
+          VkTextureDescription{
+            .format = Format::RGBA_UN8,
+            .extent = { static_cast<std::uint32_t>(data.width),
+                        static_cast<std::uint32_t>(data.height),
+                        1 },
+            .usage_flags = TextureUsageFlags::Sampled |
+                           TextureUsageFlags::TransferDestination,
+            .debug_name = std::format("MemoryLoaded_{}", name),
+          });
+        const auto tex_handle = ts.emplace_back(std::move(tex)).index();
         // We release the handle here because the texture pool will manage its
         // lifetime
 
@@ -286,11 +286,21 @@ LodGenerator::Impl::extract_vertices_from_assimp(
     vertices.push_back(v);
   }
 
+#ifdef _WIN32
   shadow_vertices = vertices |
                     std::views::transform([](const Vertex& v) -> ShadowVertex {
                       return { v.position };
                     }) |
                     std::ranges::to<std::vector<ShadowVertex>>();
+#else
+  auto new_view =
+    vertices | std::views::transform([](const Vertex& v) -> ShadowVertex {
+      return { v.position };
+    });
+  for (const auto& sv : new_view) {
+    shadow_vertices.push_back(sv);
+  }
+#endif
 }
 
 void
@@ -553,13 +563,13 @@ Mesh::create(IContext& context, const std::string_view path_view)
     };
 
   const auto index_buffer_data = generator.get_global_index_buffer();
-  const auto shadow_index_buffer_data = generator.get_global_shadow_index_buffer();
-
+  const auto shadow_index_buffer_data =
+    generator.get_global_shadow_index_buffer();
 
   Mesh mesh{};
   {
-  auto& loaded_mesh = meshes.at(0);
-  mesh.mesh_data = std::make_unique<MeshData>(std::move(loaded_mesh));
+    auto& loaded_mesh = meshes.at(0);
+    mesh.mesh_data = std::make_unique<MeshData>(std::move(loaded_mesh));
   }
 
   if (mesh.mesh_data->vertices.empty()) {

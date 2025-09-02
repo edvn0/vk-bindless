@@ -1309,6 +1309,8 @@ Context::get_pipeline(ComputePipelineHandle handle) -> VkPipeline
       };
       const VkPipelineLayoutCreateInfo ci = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+      .pNext = nullptr,
+.flags=0,
         .setLayoutCount = static_cast<uint32_t>(dsls.size()),
         .pSetLayouts = dsls.data(),
         .pushConstantRangeCount = 1,
@@ -1331,6 +1333,7 @@ Context::get_pipeline(ComputePipelineHandle handle) -> VkPipeline
 
     VkPipelineShaderStageCreateInfo psci{
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+      .pNext = nullptr,
       .flags = 0,
       .stage = VK_SHADER_STAGE_COMPUTE_BIT,
       .module = module.module,
@@ -1339,6 +1342,7 @@ Context::get_pipeline(ComputePipelineHandle handle) -> VkPipeline
     };
     const VkComputePipelineCreateInfo ci = {
       .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+      .pNext = nullptr,
       .flags = 0,
       .stage = psci,
       .layout = cps->layout,
@@ -1947,12 +1951,12 @@ StagingAllocator::StagingAllocator(IContext& ctx)
   : context(dynamic_cast<Context&>(ctx))
 {
 
-  const auto maxMemoryAllocationSize =
+  const auto max_memory_allocation_size =
     context.vulkan_properties.eleven.maxMemoryAllocationSize;
 
   // clamped to the max limits
-  max_buffer_size = std::min(maxMemoryAllocationSize, max_staging_buffer_size);
-  min_buffer_size = std::min(min_buffer_size, max_buffer_size);
+  max_buffer_size = std::min<std::uint32_t>(max_memory_allocation_size, max_staging_buffer_size);
+  min_buffer_size = std::min<std::uint32_t>(min_buffer_size, max_buffer_size);
 }
 
 void
@@ -1995,6 +1999,8 @@ StagingAllocator::upload(VkDataBuffer& buffer,
                     &copy);
     VkBufferMemoryBarrier barrier = {
       .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+    .pNext=nullptr,
+
       .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
       .dstAccessMask = 0,
       .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -2057,6 +2063,7 @@ imageMemoryBarrier2(VkCommandBuffer buffer,
 {
   const VkImageMemoryBarrier2 barrier = {
     .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+    .pNext=nullptr,
     .srcStageMask = src.stage,
     .srcAccessMask = src.access,
     .dstStageMask = dst.stage,
@@ -2071,6 +2078,12 @@ imageMemoryBarrier2(VkCommandBuffer buffer,
 
   const VkDependencyInfo depInfo = {
     .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+    .pNext=nullptr,
+    .dependencyFlags = 0,
+    .memoryBarrierCount = 0,
+    .pMemoryBarriers = nullptr,
+    .bufferMemoryBarrierCount = 0,
+    .pBufferMemoryBarriers = nullptr,
     .imageMemoryBarrierCount = 1,
     .pImageMemoryBarriers = &barrier,
   };

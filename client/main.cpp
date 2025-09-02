@@ -533,7 +533,7 @@ run_main() -> void
       uint32_t w = brdf_width;
       uint32_t h = brdf_height;
       uint64_t addr;
-      std::array<uint64_t, 6> _pad;
+      std::array<uint64_t, 6> _pad {};
     } pc {
       .w = brdf_width,
       .h = brdf_height,

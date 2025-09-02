@@ -6,6 +6,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
+#include <cstdint>
 
 #include <glslang/Include/glslang_c_interface.h>
 

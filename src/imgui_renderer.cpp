@@ -5,6 +5,7 @@
 #include "vk-bindless/pipeline.hpp"
 #include "vk-bindless/swapchain.hpp"
 
+#include <cmath>
 #include <imgui.h>
 #if defined(WITH_IMPLOT)
 #include <implot.h>
@@ -245,7 +246,7 @@ ImGuiRenderer::update_font(const std::string_view ttf_path,
   ImFontConfig cfg{};
   cfg.FontDataOwnedByAtlas = false;
   cfg.RasterizerMultiply = 1.5f;
-  cfg.SizePixels = std::ceilf(font_size_pixels);
+  cfg.SizePixels = std::ceil(font_size_pixels);
   cfg.PixelSnapH = true;
   cfg.OversampleH = 4;
   cfg.OversampleV = 4;

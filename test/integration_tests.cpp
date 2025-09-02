@@ -66,7 +66,7 @@ TEST_CASE("Create a white texture and make sure it's valid")
 
   auto texture_desc =
     VkBindless::VkTextureDescription{ .data = dummy_white_texture,
-                                      .format = VK_FORMAT_R8G8B8A8_UNORM,
+                                      .format = VkBindless::Format::RGBA_UN8,
                                       .extent = { 1, 1, 1 },
                                       .usage_flags =
                                         VkBindless::TextureUsageFlags::Sampled |

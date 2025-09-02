@@ -5,6 +5,7 @@
 #include "vk-bindless/holder.hpp"
 #include "vk-bindless/shader_compilation.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <string>
