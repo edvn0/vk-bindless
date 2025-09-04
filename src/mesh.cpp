@@ -18,15 +18,10 @@
 namespace VkBindless {
 
 namespace {
-struct LoadedImage
-{
-  int width;
-  int height;
-  std::vector<uint8_t> rgba; // 4 channels
-};
 
 auto
-decode_embedded_image(const aiTexture* tex) -> std::optional<LoadedImage>
+decode_embedded_image(const LoadedTextureType type, const aiTexture* tex)
+  -> std::optional<LoadedImage>
 {
   if (!tex)
     return std::nullopt;
@@ -40,14 +35,14 @@ decode_embedded_image(const aiTexture* tex) -> std::optional<LoadedImage>
     stbi_uc* data = stbi_load_from_memory(bytes, size, &w, &h, &comp, 4);
     if (!data)
       return std::nullopt;
-    LoadedImage img{ w, h, {} };
+    LoadedImage img{ type, w, h, {} };
     img.rgba.assign(data, data + (w * h * 4));
     stbi_image_free(data);
     return img;
   } else {
     const int w = static_cast<int>(tex->mWidth);
     const int h = static_cast<int>(tex->mHeight);
-    LoadedImage img{ w, h, {} };
+    LoadedImage img{ type, w, h, {} };
     img.rgba.resize(static_cast<size_t>(w) * h * 4);
     const aiTexel* src = tex->pcData;
     for (int i = 0; i < w * h; ++i) {
@@ -172,32 +167,10 @@ LodGenerator::process_assimp_mesh(const aiScene* scene, const aiMesh* ai_mesh)
   if (ai_mat->GetTexture(aiTextureType_DIFFUSE, 0, &tex_path) == AI_SUCCESS &&
       scene->GetEmbeddedTexture(tex_path.C_Str()) != nullptr) {
     if (auto img =
-          decode_embedded_image(scene->GetEmbeddedTexture(tex_path.C_Str()));
+          decode_embedded_image(LoadedTextureType::Albedo,
+                                scene->GetEmbeddedTexture(tex_path.C_Str()));
         img.has_value()) {
-
-      [name = std::string{ tex_path.C_Str() },
-       data = std::move(img.value()),
-       &ts = mesh.textures,
-       ctx = context,
-       &m = mesh.material] {
-        auto tex = VkTexture::from_memory(
-          *ctx,
-          std::span(data.rgba),
-          VkTextureDescription{
-            .format = Format::RGBA_UN8,
-            .extent = { static_cast<std::uint32_t>(data.width),
-                        static_cast<std::uint32_t>(data.height),
-                        1 },
-            .usage_flags = TextureUsageFlags::Sampled |
-                           TextureUsageFlags::TransferDestination,
-            .debug_name = std::format("MemoryLoaded_{}", name),
-          });
-        const auto tex_handle = ts.emplace_back(std::move(tex)).index();
-        // We release the handle here because the texture pool will manage its
-        // lifetime
-
-        m.albedo_texture = tex_handle;
-      }();
+      mesh.loaded_textures.emplace_back(std::move(img.value()));
     }
   }
 
@@ -585,6 +558,10 @@ Mesh::create(IContext& context, const std::string_view path_view)
     return unexpected<std::string>{ "No shadow LOD levels generated." };
   }
 
+  mesh.start_async_load_textures(context);
+
+  auto filename = path.filename().string();
+
   // Vertex buffer
   mesh.vertex_buffer = VkDataBuffer::create(
     context,
@@ -593,7 +570,7 @@ Mesh::create(IContext& context, const std::string_view path_view)
       .size = mesh.mesh_data->vertices.size() * sizeof(Vertex),
       .storage = StorageType::DeviceLocal,
       .usage = BufferUsageFlags::VertexBuffer,
-      .debug_name = std::format("{}_VB", path.filename().string()),
+      .debug_name = std::format("{}_VB", filename),
     });
 
   // Shadow vertex buffer
@@ -604,7 +581,7 @@ Mesh::create(IContext& context, const std::string_view path_view)
       .size = mesh.mesh_data->shadow_vertices.size() * sizeof(ShadowVertex),
       .storage = StorageType::DeviceLocal,
       .usage = BufferUsageFlags::VertexBuffer,
-      .debug_name = std::format("{}_SVB", path.filename().string()),
+      .debug_name = std::format("{}_SVB", filename),
     });
 
   // LOD index buffer
@@ -615,7 +592,7 @@ Mesh::create(IContext& context, const std::string_view path_view)
       .size = index_buffer_data.size() * sizeof(std::uint32_t),
       .storage = StorageType::DeviceLocal,
       .usage = BufferUsageFlags::IndexBuffer,
-      .debug_name = std::format("{}_IB", path.filename().string()),
+      .debug_name = std::format("{}_IB", filename),
     });
 
   // Shadow LOD index buffer
@@ -626,10 +603,35 @@ Mesh::create(IContext& context, const std::string_view path_view)
       .size = shadow_index_buffer_data.size() * sizeof(std::uint32_t),
       .storage = StorageType::DeviceLocal,
       .usage = BufferUsageFlags::IndexBuffer,
-      .debug_name = std::format("{}_SIB", path.filename().string()),
+      .debug_name = std::format("{}_SIB", filename),
     });
 
   return mesh;
+}
+
+auto
+Mesh::start_async_load_textures(IContext& context) -> void
+{
+  auto& material = mesh_data->material;
+
+  for (const auto& texture : mesh_data->loaded_textures) {
+    context.pre_frame_task([&data = texture, &m = material](auto& ctx) {
+      auto tex = VkTexture::from_memory(
+        ctx,
+        std::span(data.rgba),
+        VkTextureDescription{
+          .format = Format::RGBA_UN8,
+          .extent = { static_cast<std::uint32_t>(data.width),
+                      static_cast<std::uint32_t>(data.height),
+                      1, },
+          .usage_flags = TextureUsageFlags::Sampled |
+                         TextureUsageFlags::TransferDestination,
+          .debug_name = std::format("MemoryLoaded_{}x{}", data.width, data.height),
+        }).release();
+
+      m.albedo_texture = tex.index();
+    });
+  }
 }
 
 }

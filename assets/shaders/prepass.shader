@@ -1,20 +1,17 @@
 #pragma stage : vertex
 
+#include <ubo.glsl>
+
 layout(location = 0) in vec3 position;
 
-layout(std430, buffer_reference) readonly buffer UBO
+layout(std430, buffer_reference) readonly buffer SSBO
 {
-  mat4 model;
-  mat4 view;
-  mat4 proj;
-  vec4 camera_position;
-  vec4 light_direction;
-  uint texture;
-  uint cube_texture;
+  mat4 transforms[];
 };
 layout(push_constant) uniform PushConstants
 {
-  UBO pc;
+  UBO ubo;
+  SSBO ssbo;
 };
 
 precise invariant gl_Position;
@@ -22,7 +19,8 @@ precise invariant gl_Position;
 void
 main()
 {
-  gl_Position = pc.proj * pc.view * pc.model * vec4(position, 1.0);
+  gl_Position = ubo.proj * ubo.view * ssbo.transforms[gl_InstanceIndex] *
+                vec4(position, 1.0);
 }
 
 #pragma stage : fragment

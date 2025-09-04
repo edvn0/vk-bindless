@@ -37,3 +37,12 @@
 [submodule "third-party/stb"]
 	path = third-party/stb
 	url = git@github.com:nothings/stb.git
+[submodule "third-party/KTX-Software"]
+	path = third-party/KTX-Software
+	url = git@github.com:KhronosGroup/KTX-Software.git
+[submodule "third-party/SPIRV-Tools"]
+	path = third-party/SPIRV-Tools
+	url = git@github.com:KhronosGroup/SPIRV-Tools.git
+[submodule "third-party/glslang"]
+	path = third-party/glslang
+	url = git@github.com:KhronosGroup/glslang.git

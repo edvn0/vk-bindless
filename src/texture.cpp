@@ -9,6 +9,7 @@
 #include <assimp/texture.h>
 #include <cmath>
 #include <fstream>
+#include <type_traits>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
 
@@ -16,42 +17,41 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 
 #ifdef _MSC_VER
-  #pragma warning(push)
-  #pragma warning(disable: 4996)
+#pragma warning(push)
+#pragma warning(disable : 4996)
 #endif
 
 #include <stb_image.h>
 
 #ifdef _MSC_VER
-  #pragma warning(pop)
+#pragma warning(pop)
 #endif
 
 #ifdef _MSC_VER
-  #define STBIW_SPRINTF sprintf_s
-  #pragma warning(push)
-  #pragma warning(disable: 4996)
+#define STBIW_SPRINTF sprintf_s
+#pragma warning(push)
+#pragma warning(disable : 4996)
 #endif
 
 #if defined(__clang__)
-  #pragma clang diagnostic push
-  #pragma clang diagnostic ignored "-Wmissing-field-initializers"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-field-initializers"
 #elif defined(__GNUC__)
-  #pragma GCC diagnostic push
-  #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #endif
 
 #include <stb_image_write.h>
 
 #if defined(__clang__)
-  #pragma clang diagnostic pop
+#pragma clang diagnostic pop
 #elif defined(__GNUC__)
-  #pragma GCC diagnostic pop
+#pragma GCC diagnostic pop
 #endif
 
 #ifdef _MSC_VER
-  #pragma warning(pop)
+#pragma warning(pop)
 #endif
-
 
 namespace VkBindless {
 
@@ -97,8 +97,6 @@ VkTexture::create_internal_image(IContext& ctx,
 
   assert(!description.debug_name.empty());
 
-
-
   const AllocationCreateInfo alloc_info{
     .usage = MemoryUsage::AutoPreferDevice,
     .map_memory = false,
@@ -133,10 +131,34 @@ VkTexture::create_internal_image(IContext& ctx,
   if (data.empty())
     return;
 
+  static constexpr auto calculate_mip_levels =
+    [](std::unsigned_integral auto width,
+       std::unsigned_integral auto height) constexpr {
+      using T = std::common_type_t<decltype(width), decltype(height)>;
+      // Guard against zero (bit_width(0) is undefined)
+      if (width == 0 || height == 0) {
+        return T{ 0 };
+      }
+
+      const T max_dimension = std::max(width, height);
+
+      return static_cast<T>(std::bit_width(max_dimension));
+    };
+
   const auto& vulkan_context = dynamic_cast<Context&>(ctx);
+  const auto buffer_row_length = 0;
+  const auto computed_mip_levels =
+    calculate_mip_levels(description.extent.width, description.extent.height);
   vulkan_context.staging_allocator->upload(*this,
     VkRect2D{ .offset = {0, 0}, .extent = {description.extent.width, description.extent.height,}, },
-    0, 1, 0, description.layers, image_info.format, data.data(), 0);
+    0, 1, 0, description.layers, image_info.format, data.data(), buffer_row_length);
+
+  if (mip_levels > 1 && computed_mip_levels > 1) {
+    vulkan_context.staging_allocator->generate_mipmaps(
+      *this, get_extent().width, get_extent().height, mip_levels, array_layers);
+
+    set_layout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  }
 }
 
 VkTexture::VkTexture(IContext& ctx, const VkTextureDescription& description)
@@ -194,8 +216,7 @@ VkTexture::VkTexture(IContext& ctx, const VkTextureDescription& description)
   set_name_for_object(ctx.get_device(),
                       VK_OBJECT_TYPE_IMAGE_VIEW,
                       image_view,
-                      std::format("{} View",
-                                  description.debug_name));
+                      std::format("{} View", description.debug_name));
 
   mip_layer_views.resize(mip_levels * array_layers);
 
@@ -215,13 +236,12 @@ VkTexture::VkTexture(IContext& ctx, const VkTextureDescription& description)
         VK_VERIFY(vkCreateImageView(
           ctx.get_device(), &view_info, nullptr, &mip_layer_view));
 
-        set_name_for_object(ctx.get_device(),
-                            VK_OBJECT_TYPE_IMAGE_VIEW,
-                            mip_layer_view,
-                            std::format("{} View Mip[{}] Layer[{}]",
-                                        description.debug_name,
-                                        mip,
-                                        layer));
+        set_name_for_object(
+          ctx.get_device(),
+          VK_OBJECT_TYPE_IMAGE_VIEW,
+          mip_layer_view,
+          std::format(
+            "{} View Mip[{}] Layer[{}]", description.debug_name, mip, layer));
       }
     }
   }
@@ -447,13 +467,11 @@ VkTexture::write_hdr(std::string_view path,
                      const std::uint32_t height,
                      const std::span<const float> data) -> bool
 {
-  return stbi_write_hdr(
-        path.data(),
-      width,
-      height,
-      4, // 4 components
-      data.data()
-    );
+  return stbi_write_hdr(path.data(),
+                        width,
+                        height,
+                        4, // 4 components
+                        data.data());
 }
 
 auto

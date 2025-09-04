@@ -1,4 +1,8 @@
-#include "glslang/Include/glslang_c_shader_types.h"
+#pragma once
+
+#include "vk-bindless/expected.hpp"
+
+#include <cstdint>
 #include <expected>
 #include <regex>
 #include <sstream>
@@ -6,9 +10,9 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
-#include <cstdint>
 
 #include <glslang/Include/glslang_c_interface.h>
+#include <glslang/Include/glslang_c_shader_types.h>
 
 namespace VkBindless {
 
@@ -35,12 +39,12 @@ auto
 to_string(ShaderStage stage) -> std::string;
 auto
 parse_shader_stage(std::string_view stage_str)
-  -> std::expected<ShaderStage, ParseError>;
+  -> Expected<ShaderStage, ParseError>;
 
 struct ShaderEntry
 {
   ShaderStage stage;
-  std::string entry_name {"main"};
+  std::string entry_name{ "main" };
   std::string source_code;
   std::size_t line_number{ 0 };
 };
@@ -56,29 +60,29 @@ class ShaderParser
   struct PragmaInfo
   {
     ShaderStage stage;
-    std::string entry_name {"main"};
+    std::string entry_name{ "main" };
     std::size_t line_number;
   };
 
   static auto parse_pragma_line(std::string_view line, size_t line_number)
-    -> std::expected<PragmaInfo, ParseError>
+    -> Expected<PragmaInfo, ParseError>
   {
     line = trim(line);
 
     if (!line.starts_with("#pragma") && !line.starts_with("# pragma")) {
-      return std::unexpected(ParseError::invalid_pragma_syntax);
+      return unexpected<ParseError>(ParseError::invalid_pragma_syntax);
     }
 
     // Find "stage" keyword
     size_t stage_pos = line.find("stage");
     if (stage_pos == std::string_view::npos) {
-      return std::unexpected(ParseError::invalid_pragma_syntax);
+      return unexpected<ParseError>(ParseError::invalid_pragma_syntax);
     }
 
     // Find the colon
     size_t colon_pos = line.find(':', stage_pos);
     if (colon_pos == std::string_view::npos) {
-      return std::unexpected(ParseError::invalid_pragma_syntax);
+      return unexpected<ParseError>(ParseError::invalid_pragma_syntax);
     }
 
     // Extract everything after the colon
@@ -94,18 +98,18 @@ class ShaderParser
         // Parse entry point name: compute("entry_name")
         size_t quote_start = compute_part.find('"');
         if (quote_start == std::string_view::npos) {
-          return std::unexpected(ParseError::invalid_compute_entry_name);
+          return unexpected<ParseError>(ParseError::invalid_compute_entry_name);
         }
 
         size_t quote_end = compute_part.find('"', quote_start + 1);
         if (quote_end == std::string_view::npos) {
-          return std::unexpected(ParseError::invalid_compute_entry_name);
+          return unexpected<ParseError>(ParseError::invalid_compute_entry_name);
         }
 
         entry_name = std::string(
           compute_part.substr(quote_start + 1, quote_end - quote_start - 1));
       } else if (!compute_part.empty()) {
-        return std::unexpected(ParseError::invalid_pragma_syntax);
+        return unexpected<ParseError>(ParseError::invalid_pragma_syntax);
       }
 
       return PragmaInfo{ ShaderStage::compute, entry_name, line_number };
@@ -114,7 +118,7 @@ class ShaderParser
     // For non-compute shaders, just parse the stage name
     auto stage_result = parse_shader_stage(remainder);
     if (!stage_result) {
-      return std::unexpected(stage_result.error());
+      return unexpected<ParseError>(stage_result.error());
     }
 
     return PragmaInfo{ *stage_result, "", line_number };
@@ -139,7 +143,7 @@ class ShaderParser
 
 public:
   static auto parse(std::string_view shader_source)
-    -> std::expected<ParsedShader, ParseError>
+    -> Expected<ParsedShader, ParseError>
   {
     ParsedShader result;
     std::istringstream stream{ shader_source.data() };
@@ -155,7 +159,7 @@ public:
           line_view.starts_with("# pragma stage")) {
         auto pragma_result = parse_pragma_line(line_view, line_number);
         if (!pragma_result) {
-          return std::unexpected(pragma_result.error());
+          return unexpected<ParseError>(pragma_result.error());
         }
         pragmas.push_back(*pragma_result);
       }
@@ -163,7 +167,7 @@ public:
     }
 
     if (pragmas.empty()) {
-      return std::unexpected(ParseError::missing_stage_content);
+      return unexpected<ParseError>(ParseError::missing_stage_content);
     }
 
     // Second pass: extract shader code for each stage
@@ -188,7 +192,7 @@ public:
             create_stage_key(prev_pragma.stage, prev_pragma.entry_name);
 
           if (result.stage_lookup.contains(stage_key)) {
-            return std::unexpected(ParseError::duplicate_stage_entry);
+            return unexpected<ParseError>(ParseError::duplicate_stage_entry);
           }
 
           result.entries.emplace_back(prev_pragma.stage,
@@ -216,7 +220,7 @@ public:
         create_stage_key(last_pragma.stage, last_pragma.entry_name);
 
       if (result.stage_lookup.contains(stage_key)) {
-        return std::unexpected(ParseError::duplicate_stage_entry);
+        return unexpected<ParseError>(ParseError::duplicate_stage_entry);
       }
 
       result.entries.emplace_back(last_pragma.stage,
@@ -248,7 +252,7 @@ compile_shader(glslang_stage_t stage,
                const std::string& source_code,
                std::vector<std::uint8_t>& output,
                const glslang_resource_t* resources = nullptr)
-  -> std::expected<void, std::string>;
+  -> Expected<void, std::string>;
 
 // Utility functions for working with parsed shaders
 namespace ShaderUtils {
@@ -256,7 +260,7 @@ auto
 find_stage(const ParsedShader& parsed,
            ShaderStage stage,
            const std::string& entry_name = "")
-  -> std::expected<const ShaderEntry*, ParseError>;
+  -> Expected<const ShaderEntry*, ParseError>;
 
 auto
 find_all_compute_stages(const ParsedShader& parsed)

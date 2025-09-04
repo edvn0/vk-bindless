@@ -28,3 +28,5 @@ CMakeUserPresets.json
 assets/environment/*.ktx2
 assets/environment/*.ktx
 
+
+build-*

@@ -1,4 +1,5 @@
 #include "vk-bindless/shader_compilation.hpp"
+#include "vk-bindless/expected.hpp"
 #include "vk-bindless/scope_exit.hpp"
 #include <filesystem>
 #include <fstream>
@@ -95,7 +96,7 @@ free_include_result_callback(void* ctx, glsl_include_result_t* result)
 
 auto
 parse_shader_stage(std::string_view stage_str)
-  -> std::expected<ShaderStage, ParseError>
+  -> Expected<ShaderStage, ParseError>
 {
   if (stage_str == "vertex")
     return ShaderStage::vertex;
@@ -114,7 +115,7 @@ parse_shader_stage(std::string_view stage_str)
   if (stage_str == "mesh")
     return ShaderStage::mesh;
 
-  return std::unexpected(ParseError::unknown_shader_stage);
+  return unexpected<ParseError>(ParseError::unknown_shader_stage);
 }
 
 auto
@@ -146,7 +147,7 @@ compile_shader(glslang_stage_t stage,
                const std::string& source_code,
                std::vector<std::uint8_t>& output,
                const glslang_resource_t* resources)
-  -> std::expected<void, std::string>
+  -> Expected<void, std::string>
 {
   IncludeContext include_ctx;
 
@@ -188,7 +189,7 @@ compile_shader(glslang_stage_t stage,
     if (const std::string_view log{ debug_log }; !log.empty()) {
       std::cout << "Debug log: " << debug_log << std::endl;
     }
-    return std::unexpected(error);
+    return unexpected<std::string>(error);
   }
 
   if (!glslang_shader_parse(shader, &input)) {
@@ -198,7 +199,7 @@ compile_shader(glslang_stage_t stage,
     if (const std::string_view log{ debug_log }; !log.empty()) {
       std::cout << "Debug log: " << debug_log << std::endl;
     }
-    return std::unexpected(error);
+    return unexpected<std::string>(error);
   }
 
   glslang_program_t* program = glslang_program_create();
@@ -215,7 +216,7 @@ compile_shader(glslang_stage_t stage,
     if (const std::string_view log{ debug_log }; !log.empty()) {
       std::cout << "Debug log: " << debug_log << std::endl;
     }
-    return std::unexpected(error);
+    return unexpected<std::string>(error);
   }
 
   glslang_spv_options_t options = {
@@ -361,7 +362,7 @@ auto
 find_stage(const ParsedShader& parsed,
            ShaderStage stage,
            const std::string& entry_name)
-  -> std::expected<const ShaderEntry*, ParseError>
+  -> Expected<const ShaderEntry*, ParseError>
 {
   std::string key = (stage == ShaderStage::compute && !entry_name.empty())
                       ? "compute_" + entry_name
@@ -369,7 +370,7 @@ find_stage(const ParsedShader& parsed,
 
   auto it = parsed.stage_lookup.find(key);
   if (it == parsed.stage_lookup.end()) {
-    return std::unexpected(ParseError::missing_stage_content);
+    return unexpected<ParseError>(ParseError::missing_stage_content);
   }
 
   return &parsed.entries[it->second];

@@ -2,13 +2,8 @@ cmake_minimum_required(VERSION 3.21)
 
 include(CheckCXXSourceCompiles)
 
-project(VkBindless LANGUAGES CXX)
-
-set(SPIRV_TOOLS_PATH "" CACHE PATH "SPIRV-Tools install or build directory")
-
-if (SPIRV_TOOLS_PATH)
-  list(PREPEND CMAKE_PREFIX_PATH "${SPIRV_TOOLS_PATH}")
-endif()
+# Require C here too for libktx for some reason.
+project(VkBindless LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,9 +11,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(ENABLE_TESTING "Enable testing" ON)
 
 find_package(Vulkan REQUIRED)
-find_package(SPIRV-Tools CONFIG REQUIRED)
-find_package(SPIRV-Tools-opt CONFIG REQUIRED)
-find_package(glslang CONFIG REQUIRED)
 
 check_cxx_source_compiles("
 #include <expected>
@@ -81,16 +73,18 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         vk-bootstrap
         CustomVMA
         glfw
-        glslang::glslang
-        SPIRV-Tools-static
-        SPIRV-Tools-opt
+        
         spirv-reflect-static
         meshoptimizer::meshoptimizer
         assimp::assimp
         stb::stb
+        ktx
         PUBLIC
         glm::glm
         imgui::imgui
+        glslang::glslang
+        SPIRV-Tools-static
+        SPIRV-Tools-opt
 )
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_LEFT_HANDED)

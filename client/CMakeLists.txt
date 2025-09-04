@@ -1,6 +1,6 @@
 project(vk_bindless_client CXX)
 add_executable(vk_bindless_client main.cpp helper.cpp)
-target_link_libraries(vk_bindless_client VkBindless::VkBindless glfw)
+target_link_libraries(vk_bindless_client VkBindless::VkBindless glfw ktx)
 
 if (MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /W4 /WX)

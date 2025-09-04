@@ -1,12 +1,13 @@
 #include "vk-bindless/allocator_interface.hpp"
+#include "vk-bindless/debug_name.hpp"
 #include "vk-bindless/expected.hpp"
 
 #define VMA_IMPLEMENTATION
-#define VMA_DEBUG_LOG_FORMAT(format, ...)                                      \
+/*#define VMA_DEBUG_LOG_FORMAT(format, ...) \
   do {                                                                         \
     printf((format), __VA_ARGS__);                                             \
     printf("\n");                                                              \
-  } while (false)
+  } while (false)*/
 #include <vk_mem_alloc.h>
 
 #include <unordered_map>
@@ -64,6 +65,13 @@ public:
                                         &allocation,
                                         &allocation_info);
 
+    static auto index = 0;
+    auto name = std::format("VMA_Buffer_{}_{}", alloc_info.debug_name, index++);
+    set_name_for_object(allocator->m_hDevice,
+                        VK_OBJECT_TYPE_DEVICE_MEMORY,
+                        allocation_info.deviceMemory,
+                        name.c_str());
+
     if (result != VK_SUCCESS) {
       return unexpected<AllocationError>(
         AllocationError{ "Failed to allocate buffer" });
@@ -115,6 +123,13 @@ public:
 
     vmaSetAllocationName(allocator, allocation, alloc_info.debug_name.c_str());
 
+    static auto index = 0;
+    auto name = std::format("VMA_Image_{}_{}", alloc_info.debug_name, index++);
+    set_name_for_object(allocator->m_hDevice,
+                        VK_OBJECT_TYPE_DEVICE_MEMORY,
+                        allocation_info.deviceMemory,
+                        name.c_str());
+
     if (result != VK_SUCCESS) {
       return unexpected<AllocationError>(
         AllocationError{ "Failed to allocate image" });
@@ -144,6 +159,16 @@ public:
   auto map_memory(const VkBuffer buffer)
     -> Expected<void*, AllocationError> override
   {
+#ifdef IS_RELEASE
+    void* mapped_data;
+    if (const auto result =
+          vmaMapMemory(allocator, buffer_allocations.at(buffer), &mapped_data);
+        result == VK_SUCCESS) {
+      return mapped_data;
+    }
+    return unexpected<AllocationError>(
+      AllocationError{ "Failed to map buffer memory" });
+#else
     if (const auto it = buffer_allocations.find(buffer);
         it != buffer_allocations.end()) {
       void* mapped_data;
@@ -154,11 +179,22 @@ public:
     }
     return unexpected<AllocationError>(
       AllocationError{ "Failed to map buffer memory" });
+#endif
   }
 
   auto map_memory(const VkImage image)
     -> Expected<void*, AllocationError> override
   {
+#ifdef IS_RELEASE
+    void* mapped_data;
+    if (const auto result =
+          vmaMapMemory(allocator, image_allocations.at(image), &mapped_data);
+        result == VK_SUCCESS) {
+      return mapped_data;
+    }
+    return unexpected<AllocationError>(
+      AllocationError{ "Failed to map image memory" });
+#else
     if (const auto it = image_allocations.find(image);
         it != image_allocations.end()) {
       void* mapped_data;
@@ -169,62 +205,89 @@ public:
     }
     return unexpected<AllocationError>(
       AllocationError{ "Failed to map image memory" });
+#endif
   }
 
   auto unmap_memory(const VkBuffer buffer) -> void override
   {
+#ifdef IS_RELEASE
+    vmaUnmapMemory(allocator, buffer_allocations.at(buffer));
+#else
     if (const auto it = buffer_allocations.find(buffer);
         it != buffer_allocations.end()) {
       vmaUnmapMemory(allocator, it->second);
     }
+#endif
   }
 
   auto unmap_memory(const VkImage image) -> void override
   {
+#ifdef IS_RELEASE
+    vmaUnmapMemory(allocator, image_allocations.at(image));
+#else
     if (const auto it = image_allocations.find(image);
         it != image_allocations.end()) {
       vmaUnmapMemory(allocator, it->second);
     }
+#endif
   }
 
   auto flush_allocation(const VkBuffer buffer,
                         const VkDeviceSize offset,
                         const VkDeviceSize size) -> void override
   {
+#ifdef IS_RELEASE
+    vmaFlushAllocation(allocator, buffer_allocations.at(buffer), offset, size);
+#else
     if (const auto it = buffer_allocations.find(buffer);
         it != buffer_allocations.end()) {
       vmaFlushAllocation(allocator, it->second, offset, size);
     }
+#endif
   }
 
   auto flush_allocation(const VkImage image,
                         const VkDeviceSize offset,
                         const VkDeviceSize size) -> void override
   {
+#ifdef IS_RELEASE
+    vmaFlushAllocation(allocator, image_allocations.at(image), offset, size);
+#else
     if (const auto it = image_allocations.find(image);
         it != image_allocations.end()) {
       vmaFlushAllocation(allocator, it->second, offset, size);
     }
+#endif
   }
 
   auto invalidate_allocation(const VkBuffer buffer,
                              const VkDeviceSize offset,
                              const VkDeviceSize size) -> void override
   {
+#ifdef IS_RELEASE
+    vmaInvalidateAllocation(
+      allocator, buffer_allocations.at(buffer), offset, size);
+#else
     if (const auto it = buffer_allocations.find(buffer);
         it != buffer_allocations.end()) {
       vmaInvalidateAllocation(allocator, it->second, offset, size);
     }
+#endif
   }
 
   auto invalidate_allocation(const VkImage image,
                              const VkDeviceSize offset,
                              const VkDeviceSize size) -> void override
   {
+#ifdef IS_RELEASE
+    vmaInvalidateAllocation(
+      allocator, image_allocations.at(image), offset, size);
+#else
     if (const auto it = image_allocations.find(image);
         it != image_allocations.end()) {
       vmaInvalidateAllocation(allocator, it->second, offset, size);
     }
+#endif
   }
 
   [[nodiscard]] auto get_memory_usage() const

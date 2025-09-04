@@ -2,12 +2,14 @@
 
 #include "vk-bindless/command_buffer.hpp"
 #include "vk-bindless/commands.hpp"
+#include "vk-bindless/debug_name.hpp"
 #include "vk-bindless/expected.hpp"
 #include "vk-bindless/graphics_context.hpp"
 #include "vk-bindless/object_pool.hpp"
 #include "vk-bindless/swapchain.hpp"
 #include "vk-bindless/texture.hpp"
 #include "vk-bindless/types.hpp"
+
 
 #include <functional>
 #include <memory>
@@ -22,57 +24,43 @@ format_to_vk_format(Format format) -> VkFormat;
 auto
 vk_format_to_format(VkFormat format) -> Format;
 
-inline auto
-set_name_for_object(auto device,
-                    const auto type,
-                    const auto handle,
-                    const std::string_view name)
-{
-  VkDebugUtilsObjectNameInfoEXT name_info{
-    .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
-    .pNext = nullptr,
-    .objectType = type,
-    .objectHandle = std::bit_cast<std::uint64_t>(handle),
-    .pObjectName = name.data(),
-  };
-  static auto vkSetDebugUtilsObjectNameEXT =
-    reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(
-      vkGetDeviceProcAddr(device, "vkSetDebugUtilsObjectNameEXT"));
-  if (vkSetDebugUtilsObjectNameEXT) {
-    vkSetDebugUtilsObjectNameEXT(device, &name_info);
-  }
-};
-
 class StagingAllocator final
-{public:
+{
+public:
   explicit StagingAllocator(IContext& ctx);
   ~StagingAllocator() = default;
 
   StagingAllocator(const StagingAllocator&) = delete;
   StagingAllocator& operator=(const StagingAllocator&) = delete;
 
-  void upload(VkDataBuffer& buffer, size_t dstOffset, size_t size, const void* data);
+  void upload(VkDataBuffer& buffer,
+              size_t dstOffset,
+              size_t size,
+              const void* data);
   void upload(VkTexture& image,
-                   const VkRect2D& imageRegion,
-                   std::uint32_t baseMipLevel,
-                   std::uint32_t numMipLevels,
-                   std::uint32_t layer,
-                   std::uint32_t numLayers,
-                   VkFormat format,
-                   const void* data,
-                   std::uint32_t bufferRowLength);
-  /*void imageData3D(VkTexture& image, const VkOffset3D& offset, const VkExtent3D& extent, VkFormat format, const void* data);
-  void getImageData(VkTexture& image,
-                    const VkOffset3D& offset,
-                    const VkExtent3D& extent,
-                    VkImageSubresourceRange range,
-                    VkFormat format,
-                    void* outData);*/
+              const VkRect2D& imageRegion,
+              std::uint32_t baseMipLevel,
+              std::uint32_t numMipLevels,
+              std::uint32_t layer,
+              std::uint32_t numLayers,
+              VkFormat format,
+              const void* data,
+              std::uint32_t bufferRowLength);
+  auto generate_mipmaps(VkTexture&,
+                        std::uint32_t width,
+                        std::uint32_t height,
+                        std::uint32_t mips,
+                        std::uint32_t layer_count) -> void;
+  /*void imageData3D(VkTexture& image, const VkOffset3D& offset, const
+  VkExtent3D& extent, VkFormat format, const void* data); void
+  getImageData(VkTexture& image, const VkOffset3D& offset, const VkExtent3D&
+  extent, VkImageSubresourceRange range, VkFormat format, void* outData);*/
 
 private:
   static constexpr auto staging_buffer_alignment = 16;
 
-  struct MemoryRegionDescription {
+  struct MemoryRegionDescription
+  {
     std::uint64_t offset = 0;
     std::uint64_t size = 0;
     SubmitHandle handle = {};
@@ -165,8 +153,11 @@ public:
   auto flush_mapped_memory(BufferHandle,
                            std::uint64_t offset,
                            std::uint64_t size) -> void override;
-  [[nodiscard]] auto use_staging() const -> bool override { return use_staging_system; }
-        auto wait_for(const SubmitHandle value) -> void override
+  [[nodiscard]] auto use_staging() const -> bool override
+  {
+    return use_staging_system;
+  }
+  auto wait_for(const SubmitHandle value) -> void override
   {
     immediate_commands->wait(value);
   }
@@ -200,7 +191,7 @@ private:
   vkb::Device vkb_device{};
   VkSurfaceKHR surface{};
   Unique<Swapchain> swapchain{};
-  Unique<StagingAllocator> staging_allocator{  };
+  Unique<StagingAllocator> staging_allocator{};
   VkSemaphore timeline_semaphore{ VK_NULL_HANDLE };
   bool use_staging_system{ true };
 
@@ -256,9 +247,8 @@ private:
   {
     while (!pre_frame_callbacks.empty()) {
       auto callback = std::move(pre_frame_callbacks.front());
-      VkAllocationCallbacks* allocation_callbacks = nullptr;
       pre_frame_callbacks.pop_front();
-      callback(vkb_device.device, allocation_callbacks);
+      callback(*this);
     }
   }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vk-bindless/expected.hpp"
 #include "vk-bindless/forward.hpp"
 #include "vk-bindless/handle.hpp"
 #include "vk-bindless/holder.hpp"
@@ -32,9 +33,9 @@ to_vk_stage(const ShaderStage stage) -> VkShaderStageFlagBits
     case ShaderStage::compute:
       return VK_SHADER_STAGE_COMPUTE_BIT;
     case ShaderStage::task:
-        return VK_SHADER_STAGE_TASK_BIT_NV;
+      return VK_SHADER_STAGE_TASK_BIT_NV;
     case ShaderStage::mesh:
-        return VK_SHADER_STAGE_MESH_BIT_NV;
+      return VK_SHADER_STAGE_MESH_BIT_NV;
   }
   return VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM; // fallback
 }
@@ -43,8 +44,8 @@ class VkShader
 {
   struct PushConstantInfo
   {
-    std::size_t size{0};
-    VkShaderStageFlags stages{0};
+    std::size_t size{ 0 };
+    VkShaderStageFlags stages{ 0 };
   } push_constant_info{};
 
   struct StageModule
@@ -55,9 +56,11 @@ class VkShader
   };
 
 public:
-
   VkShader() = default;
-  VkShader(IContext*, std::vector<StageModule>&&, PushConstantInfo,VkShaderStageFlagBits );
+  VkShader(IContext*,
+           std::vector<StageModule>&&,
+           PushConstantInfo,
+           VkShaderStageFlagBits);
 
   static auto create(IContext* context, const std::filesystem::path& path)
     -> Holder<ShaderModuleHandle>;
@@ -67,15 +70,14 @@ public:
   [[nodiscard]] auto has_stage(ShaderStage stage) const -> bool
   {
     return std::ranges::any_of(
-      modules,
-                       [stage](const auto& m) { return m.stage == stage; });
+      modules, [stage](const auto& m) { return m.stage == stage; });
   }
-  auto populate_stages(std::vector<VkPipelineShaderStageCreateInfo>& stages, const VkSpecializationInfo& info) const
-    -> void
+  auto populate_stages(std::vector<VkPipelineShaderStageCreateInfo>& stages,
+                       const VkSpecializationInfo& info) const -> void
   {
     stages.clear();
     stages.reserve(modules.size());
-        for (auto&& [stage, entry_name, module] : modules) {
+    for (auto&& [stage, entry_name, module] : modules) {
       stages.push_back(VkPipelineShaderStageCreateInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
         .pNext = nullptr,
@@ -87,11 +89,12 @@ public:
       });
     }
   }
-  [[nodiscard]] auto get_push_constant_info() const -> std::pair<std::size_t, VkShaderStageFlags>
+  [[nodiscard]] auto get_push_constant_info() const
+    -> std::pair<std::size_t, VkShaderStageFlags>
   {
     return { push_constant_info.size, push_constant_info.stages };
   }
-  [[nodiscard]] auto get_shader_stage_flags() const ->  VkShaderStageFlagBits
+  [[nodiscard]] auto get_shader_stage_flags() const -> VkShaderStageFlagBits
   {
     return flags;
   }
@@ -102,7 +105,7 @@ private:
   VkShaderStageFlagBits flags{ VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM };
 
   static auto compile(IContext* device, const std::filesystem::path& path)
-    -> std::expected<VkShader, std::string>;
+    -> Expected<VkShader, std::string>;
 
   void move_from(VkShader&& other)
   {

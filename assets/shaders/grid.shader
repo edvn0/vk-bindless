@@ -94,5 +94,8 @@ gridColor(vec2 uv, vec2 camPos)
 void
 main()
 {
-  frag_colour = gridColor(uv, out_camPos);
+  vec4 c = gridColor(uv, out_camPos);
+  if (c.a < 0.01)
+    discard;       // let background show through
+  frag_colour = c; // self-lit
 }

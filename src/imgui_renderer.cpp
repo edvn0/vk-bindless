@@ -82,6 +82,13 @@ ImGuiRenderer::ImGuiRenderer(IContext& ctx,
 
 ImGuiRenderer::~ImGuiRenderer()
 {
+  for (auto& d : drawables) {
+    d.index_buffer = {};
+    d.vertex_buffer = {};
+    d.allocated_indices = 0;
+    d.allocated_vertices = 0;
+  }
+
   const auto& io = ImGui::GetIO();
   io.Fonts->TexID = nullptr;
 #if defined(WITH_IMPLOT)
@@ -210,12 +217,11 @@ ImGuiRenderer::end_frame(ICommandBuffer& command_buffer)
         continue;
       struct VulkanImguiBindData
       {
-        std::array<float, 4> LRTB{};
+        std::array<float, 4> LRTB{ { L, R, T, B } };
         std::uint64_t vb = 0;
         std::uint32_t textureId = 0;
         std::uint32_t samplerId = 0;
       } bindData = {
-        .LRTB = { L, R, T, B },
         .vb = context->get_device_address(*drawable.vertex_buffer),
         .textureId = static_cast<std::uint32_t>(cmd.TexRef.GetTexID()),
         .samplerId = sampler_clamp_to_edge.index(),

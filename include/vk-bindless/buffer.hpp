@@ -48,7 +48,7 @@ struct BufferDescription
   std::size_t size{ 0 };
   StorageType storage{ StorageType::HostVisible };
   BufferUsageFlags usage{ BufferUsageFlags::TransferDst };
-  std::string_view debug_name{};
+  std::string debug_name{};
 };
 
 class VkDataBuffer

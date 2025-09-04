@@ -242,6 +242,7 @@ enum class Format : uint8_t
   Invalid = 0,
 
   R_UN8,
+  R_UI8,
   R_UI16,
   R_UI32,
   R_UN16,
@@ -298,11 +299,11 @@ struct VertexInput final
   struct VertexInputBinding final
   {
     std::uint32_t stride = 0;
-        enum class Rate : std::uint8_t
-        {
-          Vertex = 0,
-          Instance = 1,
-        } rate = Rate::Vertex;
+    enum class Rate : std::uint8_t
+    {
+      Vertex = 0,
+      Instance = 1,
+    } rate = Rate::Vertex;
 
     auto operator<=>(const VertexInputBinding& other) const = default;
   };
@@ -329,7 +330,9 @@ struct VertexInput final
 
   auto operator<=>(const VertexInput& other) const = default;
 
-static auto create(const std::initializer_list<const VertexFormat> formats, const std::initializer_list<const VertexFormat> instance_formats = {})
+  static auto create(
+    const std::initializer_list<const VertexFormat> formats,
+    const std::initializer_list<const VertexFormat> instance_formats = {})
     -> VertexInput
   {
     VertexInput vi{};

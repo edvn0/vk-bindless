@@ -25,7 +25,8 @@ enum struct Queue
   Transfer,
 };
 
-using PreFrameCallback = std::function<void(VkDevice, VkAllocationCallbacks*)>;
+struct IContext;
+using PreFrameCallback = std::function<void(IContext&)>;
 
 struct ContextError
 {
@@ -43,6 +44,11 @@ struct IContext
 {
   virtual ~IContext() = default;
   [[nodiscard]] virtual auto get_device() const -> const VkDevice& = 0;
+  [[nodiscard]] virtual auto get_allocation_callbacks() const
+    -> const VkAllocationCallbacks*
+  {
+    return nullptr;
+  }
   [[nodiscard]] virtual auto get_physical_device() const
     -> const VkPhysicalDevice& = 0;
   [[nodiscard]] virtual auto get_instance() const -> const VkInstance& = 0;
@@ -55,9 +61,10 @@ struct IContext
   [[nodiscard]] virtual auto get_queue_family_index_unsafe(Queue queue) const
     -> std::uint32_t = 0;
 
-  [[nodiscard]]virtual auto get_frame_index() const -> std::uint64_t = 0;
+  [[nodiscard]] virtual auto get_frame_index() const -> std::uint64_t = 0;
 
-  [[nodiscard]]virtual auto get_dimensions(TextureHandle handle) const -> Dimensions = 0;
+  [[nodiscard]] virtual auto get_dimensions(TextureHandle handle) const
+    -> Dimensions = 0;
   virtual auto get_device_address(BufferHandle handle) -> std::uint64_t = 0;
   virtual auto get_mapped_pointer(BufferHandle handle) -> void* = 0;
   template<typename T>
@@ -102,7 +109,7 @@ struct IContext
   virtual auto get_current_swapchain_texture() -> TextureHandle = 0;
   virtual void wait_for(SubmitHandle value) = 0;
 
-    auto get_format(TextureHandle handle) -> Format;
+  auto get_format(TextureHandle handle) -> Format;
 };
 
 } // namespace VkBindless

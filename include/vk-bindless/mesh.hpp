@@ -19,7 +19,6 @@ struct Material
   static constexpr std::uint32_t white_texture = 0;
 
   std::uint32_t albedo_texture{ white_texture };
-
 };
 
 struct Vertex
@@ -41,10 +40,18 @@ struct LodInfo
   float target_error;
 };
 
-#define MAKE_NONCOPYABLE(TypeName) \
-  TypeName(const TypeName&) = delete; \
-  TypeName& operator=(const TypeName&) = delete
-
+enum class LoadedTextureType : std::uint8_t
+{
+  Albedo,
+  Normal,
+};
+struct LoadedImage
+{
+  LoadedTextureType type;
+  std::int32_t width;
+  std::int32_t height;
+  std::vector<std::uint8_t> rgba;
+};
 
 struct MeshData
 {
@@ -56,9 +63,7 @@ struct MeshData
 
   Material material{};
 
-  // This may be wrong.
-  std::vector<Holder<TextureHandle>> textures;
-
+  std::vector<LoadedImage> loaded_textures{};
 };
 
 class LodGenerator
@@ -126,6 +131,7 @@ class Mesh
   Holder<BufferHandle> lod_shadow_index_buffer;
 
   std::unique_ptr<MeshData> mesh_data;
+
 public:
   [[nodiscard]] auto get_vertex_buffer() const { return *vertex_buffer; }
   [[nodiscard]] auto get_shadow_vertex_buffer() const
@@ -157,6 +163,8 @@ public:
   {
     return mesh_data->shadow_lod_levels.size();
   }
+
+  auto start_async_load_textures(IContext&) -> void;
 
   static auto create(IContext&, std::string_view)
     -> Expected<Mesh, std::string>;

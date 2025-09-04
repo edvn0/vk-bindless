@@ -10,9 +10,13 @@
 #include "vk-bindless/transitions.hpp"
 #include "vk-bindless/vulkan_context.hpp"
 
+#include <cstring>
+#include <filesystem>
 #include <imgui.h>
+#include <thread>
 
 #define GLFW_INCLUDE_VULKAN
+#include "../third-party/KTX-Software/include/ktx.h"
 #include "backends/imgui_impl_glfw.h"
 #include "glm/ext/matrix_clip_space.hpp"
 #include "glm/ext/matrix_transform.hpp"
@@ -25,6 +29,7 @@
 #include <cstdint>
 #include <format>
 #include <glm/glm.hpp>
+#include <glm/gtc/random.hpp>
 #include <iostream>
 
 static auto
@@ -50,6 +55,45 @@ is_wayland() -> bool
 {
   const int platform = glfwGetPlatform();
   return platform == GLFW_PLATFORM_WAYLAND;
+}
+
+bool
+depth_state_widget(const char* label, VkBindless::DepthState& depth_state)
+{
+  bool changed = false;
+
+  if (ImGui::TreeNode(label)) {
+    // Compare operation dropdown
+    const char* compare_op_names[] = { "Never",        "Less",      "Equal",
+                                       "LessEqual",    "Greater",   "NotEqual",
+                                       "GreaterEqual", "AlwaysPass" };
+
+    int current_op = static_cast<int>(depth_state.compare_operation);
+    if (ImGui::Combo("Compare Operation",
+                     &current_op,
+                     compare_op_names,
+                     IM_ARRAYSIZE(compare_op_names))) {
+      depth_state.compare_operation =
+        static_cast<VkBindless::CompareOp>(current_op);
+      changed = true;
+    }
+
+    // Depth test enabled checkbox
+    if (ImGui::Checkbox("Depth Test Enabled",
+                        &depth_state.is_depth_test_enabled)) {
+      changed = true;
+    }
+
+    // Depth write enabled checkbox
+    if (ImGui::Checkbox("Depth Write Enabled",
+                        &depth_state.is_depth_write_enabled)) {
+      changed = true;
+    }
+
+    ImGui::TreePop();
+  }
+
+  return changed;
 }
 
 class WindowManager final
@@ -454,6 +498,31 @@ run_main() -> void
 
   auto duck_mesh = *Mesh::create(*vulkan_context, "assets/meshes/Duck.glb");
 
+  Holder<BufferHandle> ssbo_transforms;
+  static constexpr auto duck_count = 1000;
+  {
+    auto transforms = std::views::iota(0, duck_count) |
+                      std::views::transform([](const int) -> glm::mat4 {
+                        auto translation =
+                          glm::vec3{ glm::linearRand(-100.0F, 100.0F),
+                                     glm::linearRand(-100.0F, 100.0F),
+                                     glm::linearRand(-100.0F, 100.0F) };
+                        return glm::translate(glm::mat4{ 1.0F }, translation);
+                      }) |
+                      std::ranges::to<std::vector<glm::mat4>>();
+    auto as_bytes = std::span{ std::bit_cast<std::byte*>(transforms.data()),
+                               transforms.size() * sizeof(glm::mat4) };
+    ssbo_transforms = VkDataBuffer::create(
+      *vulkan_context,
+      {
+        .data = as_bytes,
+        .size = as_bytes.size_bytes(),
+        .storage = VkBindless::StorageType::HostVisible,
+        .usage = VkBindless::BufferUsageFlags::StorageBuffer,
+        .debug_name = "Duck transforms",
+      });
+  }
+
   glfwSetWindowUserPointer(window.get(), &state);
   EventSystem::EventDispatcher event_dispatcher;
   setup_event_callbacks(window.get(), &event_dispatcher);
@@ -484,7 +553,7 @@ run_main() -> void
                              EventSystem::MouseButtonEvent>(game_handler);
   event_dispatcher.subscribe<EventSystem::KeyEvent>(ui_handler);
 
-  {
+  if (!std::filesystem::is_regular_file("data/brdfLUT.ktx2")) {
     auto brdf_lut_compute_shader = VkShader::create(
       vulkan_context.get(), "assets/shaders/brdf_lut_compute.shader");
 
@@ -517,26 +586,26 @@ run_main() -> void
           .debug_name = "BRDF LUT Compute Pipeline",
         });
 
-    auto buffer = VkDataBuffer::create(
-      *vulkan_context,
-      {
-        .data = {},
-        .size = brdf_buffer_size,
-        .storage = StorageType::DeviceLocal,
-        .usage = BufferUsageFlags::StorageBuffer | BufferUsageFlags::TransferDst,
-        .debug_name = "BRDF LUT Buffer",
-      });
+    auto buffer =
+      VkDataBuffer::create(*vulkan_context,
+                           {
+                             .data = {},
+                             .size = brdf_buffer_size,
+                             .storage = StorageType::DeviceLocal,
+                             .usage = BufferUsageFlags::StorageBuffer |
+                                      BufferUsageFlags::TransferDst,
+                             .debug_name = "BRDF LUT Buffer",
+                           });
 
     auto& buf = vulkan_context->acquire_command_buffer();
     buf.cmd_bind_compute_pipeline(*brdf_lut_pipeline);
-    struct {
-      uint32_t w = brdf_width;
-      uint32_t h = brdf_height;
-      uint64_t addr;
-      std::array<uint64_t, 6> _pad {};
-    } pc {
-      .w = brdf_width,
-      .h = brdf_height,
+    struct
+    {
+      std::uint32_t w = brdf_width;
+      std::uint32_t h = brdf_height;
+      std::uint64_t addr;
+      std::array<std::uint64_t, 6> _pad{};
+    } pc{
       .addr = vulkan_context->get_device_address(*buffer),
     };
     static_assert(sizeof(decltype(pc)) == 64);
@@ -545,86 +614,135 @@ run_main() -> void
 
     vulkan_context->wait_for(*vulkan_context->submit(buf, {}));
 
-    auto vector = std::vector<std::byte>(brdf_buffer_size);
+    std::vector<ktx_uint8_t> bytes(brdf_buffer_size);
+    std::memcpy(bytes.data(),
+                vulkan_context->get_mapped_pointer(*buffer),
+                brdf_buffer_size);
 
-    auto source_span = std::span{ std::bit_cast<std::byte*>(vulkan_context->get_mapped_pointer(*buffer)),
-                                 brdf_buffer_size};
+    ktxTextureCreateInfo ci = {
+      .glInternalformat = {},
+      .vkFormat = VK_FORMAT_R16G16B16A16_SFLOAT,
+      .pDfd = {},
+      .baseWidth = brdf_width,
+      .baseHeight = brdf_height,
+      .baseDepth = 1,
+      .numDimensions = 2,
+      .numLevels = 1,
+      .numLayers = 1,
+      .numFaces = 1,
+      .isArray = KTX_FALSE,
+      .generateMipmaps = KTX_FALSE,
+    };
 
-    std::ranges::copy_n(source_span.begin(), vector.size(), std::as_writable_bytes(std::span(vector)).begin());
-
-    auto src_ptr = reinterpret_cast<const std::uint16_t*>(vector.data());
-    auto float_data = std::vector<float>(brdf_width * brdf_height * 4);
-    for (std::size_t i = 0; i < brdf_width * brdf_height * 4; ++i) {
-      // Convert uint16 to normalized float [0.0, 1.0]
-      float_data[i] = static_cast<float>(src_ptr[i]) / 65535.0f;
+    ktxTexture2* tex = nullptr;
+    {
+      KTX_error_code rc =
+        ktxTexture2_Create(&ci, KTX_TEXTURE_CREATE_ALLOC_STORAGE, &tex);
+      if (rc != KTX_SUCCESS) {
+        std::cerr << "Could not create image.\n";
+      }
     }
 
-
-    auto hdr_success = VkTexture::write_hdr(
-      "brdf_lut.hdr",
-      brdf_width,
-      brdf_height,
-      std::span (float_data)
-    );
-
-    if (hdr_success) {
-      std::cout << "BRDF LUT saved successfully as brdf_lut.hdr\n";
+    // 3) Upload the level-0 image from memory (tight packing expected).
+    {
+      const ktx_uint32_t level = 0, layer = 0, faceSlice = 0;
+      KTX_error_code rc =
+        ktxTexture_SetImageFromMemory(ktxTexture(tex),
+                                      level,
+                                      layer,
+                                      faceSlice,
+                                      bytes.data(),
+                                      static_cast<ktx_size_t>(bytes.size()));
+      if (rc != KTX_SUCCESS) {
+        std::cerr << "Could not set image data from memory.\n";
+      }
     }
+
+    // (Optional but nice for HDR data) declare linear transfer function.
+    ktxTexture2_SetOETF(tex, KHR_DF_TRANSFER_LINEAR);
+
+    // 4) Write out a KTX2 file and clean up.
+    {
+      bool create = true;
+      if (!std::filesystem::is_directory("data") &&
+          !std::filesystem::create_directory("data")) {
+        std::cerr << "Could not create the directory, or find it.\n";
+        create = false;
+      }
+
+      if (create) {
+
+        KTX_error_code rc =
+          ktxTexture2_WriteToNamedFile(tex, "data/brdfLUT.ktx2");
+        if (rc != KTX_SUCCESS) {
+          std::cerr
+            << "Could not write to folder 'data' with the created file\n";
+        }
+      }
+    }
+    ktxTexture2_Destroy(tex);
   }
 
   std::int32_t new_width = 0;
   std::int32_t new_height = 0;
 
-  auto opaque_geometry = VkShader::create(
-    vulkan_context.get(), "assets/shaders/opaque_geometry.shader");
-
-  auto prepass =
-    VkShader::create(vulkan_context.get(), "assets/shaders/prepass.shader");
-
   // MSAA sample count
-  constexpr VkSampleCountFlagBits kMsaa = VK_SAMPLE_COUNT_4_BIT;
+  constexpr VkSampleCountFlagBits kMsaa = VK_SAMPLE_COUNT_1_BIT;
 
   VertexInput static_opaque_geometry_vertex_input = VertexInput::create(
     { VertexFormat::Float3, VertexFormat::Float3, VertexFormat::Float2 });
+  auto opaque_geometry = VkShader::create(
+    vulkan_context.get(), "assets/shaders/opaque_geometry.shader");
   auto static_opaque_geometry_pipeline_handle = VkGraphicsPipeline::create(
     vulkan_context.get(),
     {
       .vertex_input = static_opaque_geometry_vertex_input,
       .shader = *opaque_geometry,
-      .color = { ColourAttachment{ .format = Format::RGBA_F32 } },
+      .color = { ColourAttachment{
+                   .format = Format::R_UI8,
+                 },
+                 ColourAttachment{
+                   .format = Format::RG_F16,
+                 },
+                 ColourAttachment{
+                   .format = Format::RGBA_F16,
+                 } },
       .depth_format = Format::Z_F32,
-      .cull_mode = CullMode::Front,
+      .cull_mode = CullMode::Back,
+      .winding = WindingMode::CW,
       .sample_count = kMsaa, // ensure pipeline is compatible with MSAA target
       .debug_name = "Static Opaque Pipeline",
     });
 
-  auto static_opaque_prepass_handle = VkGraphicsPipeline::create(
+  auto lighting_shader = VkShader::create(
+    vulkan_context.get(), "assets/shaders/lighting_gbuffer.shader");
+  auto lighting_pipeline = VkGraphicsPipeline::create(
     vulkan_context.get(),
     {
-      .vertex_input = VertexInput::create({
-        VertexFormat::Float3,
-      }),
-      .shader = *prepass,
-      .depth_format = Format::Z_F32,
-      .cull_mode = CullMode::Front,
-      .sample_count = kMsaa, // ensure pipeline is compatible with MSAA target
-      .debug_name = "Static Opaque Prepass Pipeline",
+      .vertex_input =
+        VertexInput::create({}), 
+      .shader = *lighting_shader, 
+      .color = { ColourAttachment{
+        .format = Format::RGBA_F32, }, },
+      .depth_format = Format::Invalid,  
+      .cull_mode = CullMode::None,      
+      .sample_count = VK_SAMPLE_COUNT_1_BIT, 
+      .debug_name = "Lighting Pipeline",
     });
 
-  // Offscreen textures: MSAA color, resolved single-sample color, MSAA depth
   constexpr auto null_k_bytes = [](auto k = 0) {
     return std::vector<std::byte>(k, std::byte{ 0 });
   };
 
   struct UBO
   {
-    glm::mat4 model;
     glm::mat4 view;
     glm::mat4 proj;
     glm::vec4 camera_position;
     glm::vec4 light_direction;
     std::uint32_t texture;
     std::uint32_t cube_texture;
+    std::uint64_t padding{ 0 };
   };
 
   static constexpr auto align_size = [](std::size_t size,
@@ -646,41 +764,16 @@ run_main() -> void
   auto imgui = std::make_unique<ImGuiRenderer>(
     *vulkan_context, "assets/fonts/Roboto-Regular.ttf");
 
-  // Offscreen resource handles (create helper lambda so we can recreate on
-  // resize)
-  Holder<TextureHandle> color_msaa{};
   Holder<TextureHandle> color_resolved{};
-  Holder<TextureHandle> depth_msaa{};
+  Holder<TextureHandle> g_albedo; // texture indices
+  Holder<TextureHandle> g_uvs;    // texture uvs
+  Holder<TextureHandle>
+    g_normal_rough;              // normal.xyz (view space), roughness in .w
+  Holder<TextureHandle> g_depth; // depth (Z_F32)
 
   auto create_offscreen_targets = [&](std::uint32_t w, std::uint32_t h) {
     offscreen_extent.width = w;
     offscreen_extent.height = h;
-
-    // destroy old if present (wrapper should handle)
-    color_msaa.reset();
-    color_resolved.reset();
-    depth_msaa.reset();
-
-    // MSAA color
-    color_msaa =
-      VkTexture::create(*vulkan_context,
-                        {
-                          .data = {},
-                          .format = Format::RGBA_F32,
-                          .extent = { .width = offscreen_extent.width,
-                                      .height = offscreen_extent.height,
-                                      .depth = 1 },
-                          .usage_flags = TextureUsageFlags::ColourAttachment,
-                          .layers = 1,
-                          .mip_levels = 1,
-                          .sample_count = kMsaa,
-                          .tiling = VK_IMAGE_TILING_OPTIMAL,
-                          .initial_layout = VK_IMAGE_LAYOUT_UNDEFINED,
-                          .is_owning = true,
-                          .is_swapchain = false,
-                          .externally_created_image = {},
-                          .debug_name = "Offscreen Color MSAA",
-                        });
 
     // Resolved single-sample color (sampled to be used by post shader)
     color_resolved =
@@ -700,36 +793,59 @@ run_main() -> void
                           .initial_layout = VK_IMAGE_LAYOUT_UNDEFINED,
                           .is_owning = true,
                           .is_swapchain = false,
+
                           .externally_created_image = {},
                           .debug_name = "Offscreen Color Resolved",
                         });
-
-    // MSAA depth
-    depth_msaa = VkTexture::create(
+    g_albedo =
+      VkTexture::create(*vulkan_context,
+                        { .format = Format::R_UI8,
+                          .extent = { .width = offscreen_extent.width,
+                                      .height = offscreen_extent.height,.depth = 1, },
+                          .usage_flags = TextureUsageFlags::ColourAttachment |
+                                         TextureUsageFlags::Sampled,
+                          .layers = 1,
+                          .mip_levels = 1,
+                          .sample_count = VK_SAMPLE_COUNT_1_BIT,
+                          .debug_name = "GBuffer AlbedoMetallic" });
+    g_uvs =
+      VkTexture::create(*vulkan_context,
+                        { .format = Format::RG_F16,
+                          .extent = { .width = offscreen_extent.width,
+                                      .height = offscreen_extent.height,.depth = 1, },
+                          .usage_flags = TextureUsageFlags::ColourAttachment |
+                                         TextureUsageFlags::Sampled,
+                          .layers = 1,
+                          .mip_levels = 1,
+                          .sample_count = VK_SAMPLE_COUNT_1_BIT,
+                          .debug_name = "GBuffer UVs" });
+    g_normal_rough =
+      VkTexture::create(*vulkan_context,
+                        { .format = Format::RGBA_F16,
+                          .extent = { .width = offscreen_extent.width,
+                                      .height = offscreen_extent.height,.depth = 1, },
+                          .usage_flags = TextureUsageFlags::ColourAttachment |
+                                         TextureUsageFlags::Sampled,
+                          .layers = 1,
+                          .mip_levels = 1,
+                          .sample_count = VK_SAMPLE_COUNT_1_BIT,
+                          .debug_name = "GBuffer NormalRoughness" });
+    g_depth = VkTexture::create(
       *vulkan_context,
-      {
-        .data = {},
-        .format = Format::Z_F32,
+      { .format = Format::Z_F32,
         .extent = { .width = offscreen_extent.width,
-                    .height = offscreen_extent.height,
-                    .depth = 1 },
-        .usage_flags = TextureUsageFlags::DepthStencilAttachment,
+                                      .height = offscreen_extent.height,.depth = 1, },
+        .usage_flags = TextureUsageFlags::DepthStencilAttachment |
+                       TextureUsageFlags::Sampled,
         .layers = 1,
         .mip_levels = 1,
-        .sample_count = kMsaa,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .initial_layout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .is_owning = true,
-        .is_swapchain = false,
-        .externally_created_image = {},
-        .debug_name = "Depth MSAA",
-      });
+        .sample_count = VK_SAMPLE_COUNT_1_BIT,
+        .debug_name = "GBuffer Depth" });
   };
 
   // initial create
   create_offscreen_targets(static_cast<std::uint32_t>(initial_width),
                            static_cast<std::uint32_t>(initial_height));
-
   // Post pipeline & shader (samples resolved offscreen texture by index via
   // push constants)
   auto post_shader =
@@ -740,7 +856,7 @@ run_main() -> void
     {
       .shader = *post_shader,
       .color = { ColourAttachment{ .format = Format::BGRA_UN8 } },
-      .depth_format = Format::Invalid,
+      .depth_format = Format::Z_F32,
       .sample_count = VK_SAMPLE_COUNT_1_BIT,
       .debug_name = "Post Pipeline",
     });
@@ -776,7 +892,17 @@ run_main() -> void
   };
 
   static int lod_choice = 0;
-  static int shadow_lod_choice = 0;
+
+  constexpr DepthState gbuffer_depth_state{
+    .compare_operation = CompareOp::Greater,
+    .is_depth_test_enabled = true,
+    .is_depth_write_enabled = true,
+  };
+  static DepthState grid_depth_state{
+    .compare_operation = CompareOp::Greater,
+    .is_depth_test_enabled = true,
+    .is_depth_write_enabled = false,
+  };
 
   while (!glfwWindowShouldClose(window.get())) {
     event_dispatcher.process_events();
@@ -791,7 +917,7 @@ run_main() -> void
       continue;
 
     // Update UBO
-    glm::vec3 dir;
+    glm::vec3 dir{};
     static float rad_phi{};
     static float rad_theta{};
     // For demo: change light via ImGui in present pass; here just compute from
@@ -806,11 +932,7 @@ run_main() -> void
       glm::radians(70.0F),
       static_cast<float>(new_width) / static_cast<float>(new_height),
       0.1F);
-    const auto rotation = glm::rotate(glm::mat4(1.0F),
-                                      static_cast<float>(glfwGetTime()),
-                                      glm::vec3(0.0F, 1.0F, 0.0F));
     UBO ubo_data{
-      .model = rotation,
       .view = view,
       .proj = projection,
       .camera_position = glm::vec4(camera.get_position(), 1.0F),
@@ -823,8 +945,12 @@ run_main() -> void
     struct PC
     {
       std::uint64_t ubo_address;
+      std::uint64_t ssbo_address;
     };
-    PC pc{ .ubo_address = main_ubo.get_address(*vulkan_context) };
+    PC pc{
+      .ubo_address = main_ubo.get_address(*vulkan_context),
+      .ssbo_address = vulkan_context->get_device_address(*ssbo_transforms),
+    };
 
     // Recreate offscreen textures if window size changed
     ensure_size(new_width, new_height);
@@ -832,48 +958,27 @@ run_main() -> void
     // Acquire command buffer
     auto& buf = vulkan_context->acquire_command_buffer();
 
-    /*
-        // PASS 0: Predepth
-            buf.cmd_begin_rendering(
-                RenderPass{
-                    .color = {},
-                    .depth = { .load_op = LoadOp::Clear, .store_op =
-       StoreOp::Store, .clear_depth = 0.0F }, .stencil = {}, .layer_count = 1,
-                    .view_mask = 0,
-                },
-                Framebuffer{
-                    .color = {},
-                    .depth_stencil = { .texture = *depth_msaa },
-                    .debug_name = "Predepth FB",
-                },
-                {});
-            buf.cmd_bind_graphics_pipeline(*static_opaque_prepass_handle);
-            buf.cmd_bind_depth_state({
-                .compare_operation = CompareOp::Greater,
-                .is_depth_write_enabled = true,
-            });
-          buf.cmd_push_constants<PC>(pc, 0);
-
-            buf.cmd_bind_vertex_buffer(0, duck_mesh.get_shadow_vertex_buffer(),
-       0); auto&& [count, offset] =
-       duck_mesh.get_shadow_index_binding_data(shadow_lod_choice);
-            buf.cmd_bind_index_buffer(
-                duck_mesh.get_shadow_index_buffer(), IndexFormat::UI32, offset *
-       sizeof(std::uint32_t)); buf.cmd_draw_indexed(count, 1, 0, 0, 0);
-            buf.cmd_end_rendering();
-            */
-
     // ---------------- PASS 1: OFFSCREEN GEOMETRY (MSAA -> resolve)
     // ----------------
     RenderPass gbuffer_pass {
             .color= {
                 RenderPass::AttachmentDescription{
                     .load_op = LoadOp::Clear,
-                    .store_op = StoreOp::MsaaResolve,
-                    .clear_colour = std::array{0.1F, 0.1F, 0.1F, 1.0F},
+                    .store_op = StoreOp::Store,
+                    .clear_colour = std::array{0.0F,0.0F,0.0F,0.0F},
+                },
+                RenderPass::AttachmentDescription{
+                    .load_op = LoadOp::Clear,
+                    .store_op = StoreOp::Store,
+                    .clear_colour = std::array{0.0F,0.0F,0.0F,0.0F},
+                },
+                RenderPass::AttachmentDescription{
+                    .load_op = LoadOp::Clear,
+                    .store_op = StoreOp::Store,
+                    .clear_colour = std::array{0.0F,0.0F,0.0F,0.0F},
                 },
             },
-            .depth ={ .load_op = LoadOp::Clear, .store_op = StoreOp::DontCare, .clear_depth = 0.0F },
+            .depth ={ .load_op = LoadOp::Clear, .store_op = StoreOp::Store, .clear_depth = 0.0F, },
             .stencil = {},
             .layer_count = 1,
             .view_mask = 0,
@@ -883,58 +988,139 @@ run_main() -> void
     Framebuffer gbuffer_fb{
             .color = {
                 Framebuffer::AttachmentDescription{
-                    .texture = *color_msaa,
-                    .resolve_texture = *color_resolved,
+                    .texture = *g_albedo,
+                },
+                Framebuffer::AttachmentDescription{
+                    .texture = *g_uvs,
+                },
+                Framebuffer::AttachmentDescription{
+                    .texture = *g_normal_rough,
                 },
             },
-            .depth_stencil = { *depth_msaa },
-            .debug_name = "GBuffer (MSAA + Resolve)",
+            .depth_stencil = { *g_depth },
+            .debug_name = "GBuffer",
         };
 
-    buf.cmd_begin_rendering(gbuffer_pass, gbuffer_fb, {});
-
-    {
-      buf.cmd_bind_graphics_pipeline(*grid_pipeline);
-      buf.cmd_bind_depth_state({});
-      struct GridPC
-      {
-        std::uint64_t ubo_address; // matches UBO pc
-        std::uint64_t padding{ 0 };
-        alignas(16) glm::vec4 origin;
-        alignas(16) glm::vec4 grid_colour_thin;
-        alignas(16) glm::vec4 grid_colour_thick;
-        alignas(16) glm::vec4 grid_params;
-      };
-      GridPC grid_pc{
-        .ubo_address = main_ubo.get_address(*vulkan_context),
-        .origin = glm::vec4{ 0.0f },
-        .grid_colour_thin = glm::vec4{ 0.5f, 0.5f, 0.5f, 1.0f },
-        .grid_colour_thick = glm::vec4{ 0.15f, 0.15f, 0.15f, 1.0f },
-        .grid_params = glm::vec4{ 100.0f, 0.025f, 2.0f, 0.0f },
-      };
-      buf.cmd_push_constants<GridPC>(grid_pc, 0);
-      buf.cmd_draw(6, 1, 0, 0);
-    }
+    buf.cmd_begin_rendering(gbuffer_pass,
+                            gbuffer_fb,
+                            {
+                              .textures = {},
+                            });
 
     buf.cmd_bind_graphics_pipeline(*static_opaque_geometry_pipeline_handle);
     buf.cmd_push_constants<PC>(pc, 0);
-    buf.cmd_bind_depth_state({
-      .compare_operation = CompareOp::Greater,
-      .is_depth_test_enabled = true,
-      .is_depth_write_enabled = true,
-    });
+    buf.cmd_bind_depth_state(gbuffer_depth_state);
     buf.cmd_bind_vertex_buffer(0, duck_mesh.get_vertex_buffer(), 0);
     auto&& [dcount, doffset] = duck_mesh.get_index_binding_data(lod_choice);
     buf.cmd_bind_index_buffer(duck_mesh.get_index_buffer(),
                               IndexFormat::UI32,
                               doffset * sizeof(std::uint32_t));
 
-    buf.cmd_draw_indexed(dcount, 1, 0, 0, 0);
+    buf.cmd_draw_indexed(dcount, duck_count, 0, 0, 0);
 
     // End offscreen pass
     buf.cmd_end_rendering();
 
-    // ---------------- PASS 2: PRESENT (sample resolved -> swapchain)
+    // ---------------- PASS 3: GBUFFER SHADING (albedo,normal) -> MSAA Target
+    // ----------------§
+    RenderPass lighting_pass{
+    .color = {
+        RenderPass::AttachmentDescription{
+            .load_op = LoadOp::Clear,
+            .store_op = StoreOp::Store,
+            .clear_colour = std::array{0.0F, 0.0F, 0.0F, 1.0F}, // clear HDR target
+        },
+    },
+    .depth = {},
+    .stencil = {},
+    .layer_count = 1,
+    .view_mask = 0,
+};
+
+    Framebuffer lighting_fb{
+    .color = {
+        Framebuffer::AttachmentDescription{ .texture = *color_resolved },
+    },
+    .debug_name = "Lighting FB",
+};
+
+    buf.cmd_begin_rendering(lighting_pass, lighting_fb, {});
+
+    // Bind fullscreen pipeline
+    buf.cmd_bind_graphics_pipeline(*lighting_pipeline);
+    buf.cmd_bind_depth_state({
+      .compare_operation = CompareOp::AlwaysPass,
+      .is_depth_test_enabled = false,
+      .is_depth_write_enabled = false,
+    });
+    struct LightingPC
+    {
+      std::uint32_t g_material_index;
+      std::uint32_t g_uv_index;
+      std::uint32_t g_normal_rough_idx;
+      std::uint32_t g_depth_idx;
+      std::uint32_t g_sampler_index{ 0 };
+      std::uint64_t ubo_address;
+    };
+    LightingPC lpc{
+      .g_material_index = g_albedo.index(),
+      .g_uv_index = g_uvs.index(),
+      .g_normal_rough_idx = g_normal_rough.index(),
+      .g_depth_idx = g_depth.index(),
+      .ubo_address = main_ubo.get_address(*vulkan_context),
+    };
+    buf.cmd_push_constants(lpc, 0);
+
+    buf.cmd_draw(3, 1, 0, 0);
+
+    buf.cmd_end_rendering();
+
+    RenderPass forward_pass{
+    .color = {
+        RenderPass::AttachmentDescription{
+            .load_op = LoadOp::Load,
+            .store_op = StoreOp::Store,
+        },
+    },
+    .depth = {.load_op = LoadOp::Load, .store_op = StoreOp::DontCare,},
+    .stencil = {},
+    .layer_count = 1,
+    .view_mask = 0,
+};
+
+    Framebuffer forward_framebuffer{
+    .color = {
+        Framebuffer::AttachmentDescription{ .texture = *color_resolved },
+    },
+    .depth_stencil = {
+      .texture = *g_depth
+    },
+    .debug_name = "Forward FB",
+};
+    buf.cmd_begin_rendering(forward_pass, forward_framebuffer, {});
+    buf.cmd_bind_graphics_pipeline(*grid_pipeline);
+    buf.cmd_bind_depth_state(grid_depth_state);
+    struct GridPC
+    {
+      std::uint64_t ubo_address; // matches UBO pc
+      std::uint64_t padding{ 0 };
+      alignas(16) glm::vec4 origin;
+      alignas(16) glm::vec4 grid_colour_thin;
+      alignas(16) glm::vec4 grid_colour_thick;
+      alignas(16) glm::vec4 grid_params;
+    };
+    GridPC grid_pc{
+      .ubo_address = main_ubo.get_address(*vulkan_context),
+      .origin = glm::vec4{ 0.0f },
+      .grid_colour_thin = glm::vec4{ 0.5f, 0.5f, 0.5f, 1.0f },
+      .grid_colour_thick = glm::vec4{ 0.15f, 0.15f, 0.15f, 1.0f },
+      .grid_params = glm::vec4{ 100.0f, 0.025f, 2.0f, 0.0f },
+    };
+    buf.cmd_push_constants<GridPC>(grid_pc, 0);
+    buf.cmd_draw(6, 1, 0, 0);
+    buf.cmd_end_rendering();
+
+    // ---------------- PASS 4: PRESENT (sample resolved -> swapchain)
     // ----------------
     auto swapchain_texture = vulkan_context->get_current_swapchain_texture();
 
@@ -946,7 +1132,7 @@ run_main() -> void
                     .clear_colour = std::array{1.0F, 1.0F, 1.0F, 1.0F},
                 },
             },
-            .depth = {},
+            .depth = {.load_op = LoadOp::Load, .store_op = StoreOp::DontCare,},
             .stencil = {},
             .layer_count = 1,
             .view_mask = 0,
@@ -956,7 +1142,7 @@ run_main() -> void
       .color = { Framebuffer::AttachmentDescription{
         .texture = swapchain_texture,
       } },
-      .depth_stencil = {},
+      .depth_stencil = { *g_depth },
       .debug_name = "Present FB",
     };
 
@@ -965,8 +1151,11 @@ run_main() -> void
     // Begin ImGui for present pass
     imgui->begin_frame(present_fb);
     ImGui::Begin("Texture Viewer");
-    ImGui::Image(ImTextureID{ 0 }, ImVec2(512, 512));
+    ImGui::Image(
+      ImTextureID{ duck_mesh.get_mesh_data().material.albedo_texture },
+      ImVec2(512, 512));
     draw_compact_wasd_qe_widget();
+    depth_state_widget("Grid depth state", grid_depth_state);
     ImGui::SliderAngle("Light Direction (phi)",
                        &rad_phi,
                        0.0F,
@@ -984,11 +1173,6 @@ run_main() -> void
     auto max = duck_mesh.get_mesh_data().lod_levels.size();
     ImGui::SliderInt(
       "Duck LOD", &lod_choice, 0, static_cast<std::int32_t>(max) - 1);
-    auto max_shadow = duck_mesh.get_mesh_data().shadow_lod_levels.size();
-    ImGui::SliderInt("Duck Shadow LOD",
-                     &shadow_lod_choice,
-                     0,
-                     static_cast<std::int32_t>(max_shadow) - 1);
 
     // ImGui::ShowDemoWindow();
     // ImPlot::ShowDemoWindow();
@@ -997,7 +1181,6 @@ run_main() -> void
     // Bind post pipeline and sample the resolved texture by index using push
     // constants
     buf.cmd_bind_graphics_pipeline(*post_pipeline);
-
     struct PostPC
     {
       std::uint32_t tex_index;
@@ -1018,15 +1201,6 @@ run_main() -> void
     const auto result = vulkan_context->submit(buf, swapchain_texture);
     (void)result; // handle errors as needed
   }
-
-  for (auto& handle : main_ubo.buffers) {
-    handle.reset();
-    handle = {};
-  }
-  imgui.reset();
-  color_msaa.reset();
-  color_resolved.reset();
-  depth_msaa.reset();
 }
 
 auto

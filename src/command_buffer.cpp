@@ -164,6 +164,7 @@ CommandBuffer::cmd_begin_rendering(const RenderPass& render_pass,
   }
 
   TextureHandle depth_texture = fb.depth_stencil.texture;
+  /*
   if (depth_texture) {
     const auto* depth_image = *context->get_texture_pool().get(depth_texture);
     Transition::depth_image(wrapper->command_buffer,
@@ -178,7 +179,7 @@ CommandBuffer::cmd_begin_rendering(const RenderPass& render_pass,
                             depth_resolve_image->get_image(),
                             VK_IMAGE_LAYOUT_UNDEFINED,
                             VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-  }
+  }*/
 
   VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
   std::uint32_t mip_level = 0;
@@ -455,7 +456,6 @@ CommandBuffer::cmd_bind_compute_pipeline(ComputePipelineHandle handle) -> void
                                           pipeline->get_layout());
   }
 }
-
 
 auto
 CommandBuffer::cmd_bind_graphics_pipeline(const GraphicsPipelineHandle handle)

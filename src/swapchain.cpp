@@ -214,13 +214,6 @@ Swapchain::create_swapchain_impl(std::uint32_t width,
 
   auto choose_swapchain_present_mode =
     [](const std::vector<VkPresentModeKHR>& modes) -> VkPresentModeKHR {
-#if defined(__linux__) || defined(_M_ARM64)
-    if (std::find(modes.cbegin(),
-                  modes.cend(),
-                  VK_PRESENT_MODE_IMMEDIATE_KHR) != modes.cend()) {
-      return VK_PRESENT_MODE_IMMEDIATE_KHR;
-    }
-#endif // __linux__
     if (std::find(modes.cbegin(), modes.cend(), VK_PRESENT_MODE_MAILBOX_KHR) !=
         modes.cend()) {
       return VK_PRESENT_MODE_MAILBOX_KHR;
@@ -264,6 +257,8 @@ Swapchain::create_swapchain_impl(std::uint32_t width,
     context_ref.get_queue_family_index_unsafe(Queue::Graphics),
   };
 
+  static constexpr auto prefer_vsync = true;
+
   const VkSwapchainCreateInfoKHR ci = {
       .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
       .pNext = nullptr,
@@ -287,8 +282,8 @@ Swapchain::create_swapchain_impl(std::uint32_t width,
       .compositeAlpha = is_composite_alpha_opaque_supported
                             ? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
                             : VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
-      .presentMode =
-          choose_swapchain_present_mode(context_ref.device_present_modes),
+      .presentMode =prefer_vsync ?
+          VK_PRESENT_MODE_FIFO_KHR: choose_swapchain_present_mode(context_ref.device_present_modes),
       .clipped = VK_TRUE,
       .oldSwapchain = old_swapchain,
   };
@@ -453,16 +448,19 @@ Swapchain::resize(std::uint32_t new_width, std::uint32_t new_height) -> void
 
   for (VkSemaphore sem : acquire_semaphores) {
     if (sem != VK_NULL_HANDLE) {
-      context().pre_frame_task(
-        [sem](auto dev, auto) { vkDestroySemaphore(dev, sem, nullptr); });
+      context().pre_frame_task([sem](auto& ctx) {
+        vkDestroySemaphore(
+          ctx.get_device(), sem, ctx.get_allocation_callbacks());
+      });
       sem = VK_NULL_HANDLE;
     }
   }
 
   for (VkFence fence : present_fences) {
     if (fence != VK_NULL_HANDLE) {
-      context().pre_frame_task(
-        [fence](auto dev, auto) { vkDestroyFence(dev, fence, nullptr); });
+      context().pre_frame_task([fence](auto& ctx) {
+        vkDestroyFence(ctx.get_device(), fence, ctx.get_allocation_callbacks());
+      });
       fence = VK_NULL_HANDLE;
     }
   }
