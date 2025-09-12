@@ -4,6 +4,7 @@
 #include "vk-bindless/graphics_context.hpp"
 #include "vk-bindless/object_pool.hpp"
 #include "vk-bindless/vulkan_context.hpp"
+#include <iostream>
 
 namespace VkBindless {
 
@@ -33,12 +34,18 @@ static constexpr auto storage_type_to_vk_memory_property_flags =
 };
 
 auto
-VkDataBuffer::create(IContext& context, const BufferDescription& desc)
+VkDataBuffer::create(IContext& context, const BufferDescription& c)
   -> Holder<BufferHandle>
 {
-  if (!desc.data.empty() && desc.size != desc.data.size_bytes()) {
-    throw std::runtime_error(
-      "BufferDescription size must match data size when data is provided");
+  auto desc = c;
+  if (!desc.data.empty()) {
+    auto old = desc.size;
+    desc.size = desc.data.size_bytes();
+    if (old != desc.size) {
+      std::cout << std::format(
+                     "Changed requested size from {} to {}", old, desc.size)
+                << "\n";
+    }
   }
 
   auto storage = desc.storage;
@@ -142,6 +149,46 @@ VkDataBuffer::invalidate_mapped_memory(IContext& context,
     return;
   auto& allocator = context.get_allocator_implementation();
   allocator.invalidate_allocation(get_buffer(), offset, s);
+}
+
+IndirectBuffer::IndirectBuffer(IContext& ctx,
+                               std::size_t max_draw_commands,
+                               StorageType type)
+  : context(&ctx)
+  , draw_commands(max_draw_commands)
+{
+  const BufferDescription description{
+    .size = sizeof(std::uint32_t) + std::span(draw_commands).size_bytes(),
+    .storage = type,
+    .usage = BufferUsageFlags::IndirectBuffer | BufferUsageFlags::StorageBuffer,
+    .debug_name = "Indirect Buffer",
+  };
+  indirect_buffer = VkDataBuffer::create(ctx, description);
+}
+
+auto
+IndirectBuffer::upload() -> void
+{
+  auto* buffer = *context->get_buffer_pool().get(indirect_buffer);
+  const auto num_commands = static_cast<std::uint32_t>(draw_commands.size());
+  buffer->upload(std::span{ &num_commands, 1 }, 0);
+  buffer->upload(draw_commands, sizeof(std::uint32_t));
+  context->flush_mapped_memory(*indirect_buffer,
+                               0,
+                               sizeof(std::uint32_t) +
+                                 draw_commands.size() *
+                                   sizeof(VkDrawIndexedIndirectCommand));
+}
+
+auto
+IndirectBuffer::as_span() const -> std::span<VkDrawIndexedIndirectCommand>
+{
+  auto* base =
+    static_cast<std::uint8_t*>(context->get_mapped_pointer(*indirect_buffer));
+  auto* gpu_commands =
+    reinterpret_cast<VkDrawIndexedIndirectCommand*>(base + sizeof(uint32_t));
+
+  return { gpu_commands, draw_commands.size() };
 }
 
 }

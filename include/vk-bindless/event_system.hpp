@@ -2,14 +2,15 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <unordered_map>
 #include <vector>
-#include <exception>
 
-extern "C" {
-struct GLFWwindow;
+extern "C"
+{
+  struct GLFWwindow;
 }
 
 namespace EventSystem {
@@ -158,8 +159,7 @@ class EventDispatcher
 
     auto operator<=>(const HandlerInfo& other) const
     {
-      return other.priority <=>
-             priority;
+      return other.priority <=> priority;
     }
   };
 
@@ -181,11 +181,11 @@ public:
     std::sort(std::begin(handler_list), std::end(handler_list));
   }
 
-  template<typename... EventTypes> requires(sizeof...(EventTypes) >1)
-  auto subscribe(const std::shared_ptr<IEventHandler>& handler)
-    -> void
+  template<typename... EventTypes>
+    requires(sizeof...(EventTypes) > 1)
+  auto subscribe(const std::shared_ptr<IEventHandler>& handler) -> void
   {
-        (subscribe<EventTypes>(handler), ...);
+    (subscribe<EventTypes>(handler), ...);
   }
 
   template<typename EventType>

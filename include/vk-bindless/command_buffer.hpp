@@ -62,8 +62,11 @@ public:
                                 std::uint32_t first_index,
                                 std::int32_t vertex_offset,
                                 std::uint32_t base_instance) -> void = 0;
-  virtual auto cmd_dispatch_thread_groups(const Dimensions&)
-    -> void = 0;
+  virtual auto cmd_draw_indexed_indirect(BufferHandle indirect_buffer,
+                                         std::size_t indirect_buffer_offset,
+                                         std::uint32_t draw_count,
+                                         std::uint32_t stride) -> void = 0;
+  virtual auto cmd_dispatch_thread_groups(const Dimensions&) -> void = 0;
 
   virtual auto cmd_push_constants(std::span<const std::byte>) -> void = 0;
   template<typename T>
@@ -82,6 +85,7 @@ public:
   virtual auto cmd_bind_vertex_buffer(std::uint32_t index,
                                       BufferHandle buffer,
                                       std::uint64_t buffer_offset) -> void = 0;
+
   /*
 
 
@@ -103,10 +107,7 @@ public:
                                          std::size_t indirect_buffer_offset,
                                          std::uint32_t draw_count,
                                          std::uint32_t stride = 0) -> void = 0;
-          virtual auto cmd_draw_indexed_indirect(BufferHandle indirect_buffer,
-                                                 std::size_t
-       indirect_buffer_offset, std::uint32_t draw_count, std::uint32_t stride =
-     0)
+
        -> void = 0; virtual auto cmd_draw_indexed_indirect_count( BufferHandle
           indirect_buffer, std::size_t indirect_buffer_offset, BufferHandle
           count_buffer, std::size_t count_buffer_offset, std::uint32_t
@@ -178,8 +179,7 @@ public:
   auto cmd_bind_scissor_rect(const ScissorRect& rect) -> void override;
   auto cmd_bind_graphics_pipeline(GraphicsPipelineHandle handle)
     -> void override;
-  auto cmd_bind_compute_pipeline(ComputePipelineHandle handle)
-    -> void override;
+  auto cmd_bind_compute_pipeline(ComputePipelineHandle handle) -> void override;
   auto cmd_bind_depth_state(const DepthState& state) -> void override;
   auto cmd_draw(std::uint32_t, std::uint32_t, std::uint32_t, std::uint32_t)
     -> void override;
@@ -188,6 +188,10 @@ public:
                         std::uint32_t,
                         std::int32_t,
                         std::uint32_t) -> void override;
+  auto cmd_draw_indexed_indirect(BufferHandle,
+                                 std::size_t,
+                                 std::uint32_t,
+                                 std::uint32_t) -> void override;
   auto cmd_dispatch_thread_groups(const Dimensions&) -> void override;
   auto cmd_push_constants(std::span<const std::byte>) -> void override;
   auto cmd_bind_index_buffer(BufferHandle index_buffer,

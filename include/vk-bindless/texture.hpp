@@ -13,6 +13,7 @@
 #include "vk-bindless/forward.hpp"
 #include "vk-bindless/holder.hpp"
 
+#include <ktx.h>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -53,6 +54,7 @@ struct VkTextureDescription
 {
   std::span<const std::uint8_t> data{}; // This can absolutely be empty, but if
                                         // it is not, it must be a valid image
+  ktxTexture2* fully_specified_data{ nullptr };
   Format format{ Format::Invalid };
   VkExtent3D extent{ 1, 1, 1 };
   TextureUsageFlags usage_flags{ TextureUsageFlags::Sampled |
@@ -68,7 +70,8 @@ struct VkTextureDescription
   std::optional<VkImageLayout> final_layout{
     std::nullopt
   }; // If not set, it will be VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL if
-     // sampled, VK_IMAGE_LAYOUT_GENERAL if storage, else VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+     // sampled, VK_IMAGE_LAYOUT_GENERAL if storage, else
+     // VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
   bool is_owning{ true };
   bool is_swapchain{ false };
 
@@ -83,8 +86,12 @@ public:
   VkTexture() = default;
   VkTexture(IContext&, const VkTextureDescription&);
 
-  static auto from_file(IContext&, std::string_view,const VkTextureDescription&) -> Holder<TextureHandle>;
-  static auto from_memory(IContext&, std::span<const std::uint8_t>,const VkTextureDescription&) -> Holder<TextureHandle>;
+  static auto from_file(IContext&,
+                        std::string_view,
+                        const VkTextureDescription&) -> Holder<TextureHandle>;
+  static auto from_memory(IContext&,
+                          std::span<const std::uint8_t>,
+                          const VkTextureDescription&) -> Holder<TextureHandle>;
   static auto create(IContext&, const VkTextureDescription&)
     -> Holder<TextureHandle>;
 
@@ -136,8 +143,17 @@ public:
     return is_swapchain;
   }
 
-  [[nodiscard]] auto get_layout() const -> VkImageLayout { return current_layout; }
-  auto set_layout(const VkImageLayout layout) -> void { current_layout = layout; }
+  [[nodiscard]] auto get_layout() const -> VkImageLayout
+  {
+    return current_layout;
+  }
+  auto set_layout(const VkImageLayout layout) -> void
+  {
+    current_layout = layout;
+  }
+
+  auto get_mip_levels() const { return mip_levels; }
+  auto get_array_layers() const { return array_layers; }
 
   static auto write_hdr(std::string_view path,
                         std::uint32_t width,
@@ -170,6 +186,7 @@ private:
   bool storage{ false };
   bool is_depth{ false };
 
+  std::string debug_name{};
   auto create_internal_image(IContext&, const VkTextureDescription&) -> void;
 };
 
@@ -202,16 +219,16 @@ using MipMapMode = FilterMode;
 
 struct SamplerDescription
 {
-  WrappingMode wrap_u { WrappingMode::Repeat };
-  WrappingMode wrap_v { WrappingMode::Repeat };
-  WrappingMode wrap_w { WrappingMode::Repeat };
-  FilterMode min_filter { FilterMode::Linear };
-  FilterMode mag_filter { FilterMode::Linear };
-  MipMapMode mipmap_mode { MipMapMode::Linear };
-  float min_lod { 0.0f };
-  float max_lod { 1.0f };
-  BorderColor border_color { BorderColor::FloatOpaqueBlack };
-  std::optional<CompareOp> compare_op { std::nullopt };
+  WrappingMode wrap_u{ WrappingMode::Repeat };
+  WrappingMode wrap_v{ WrappingMode::Repeat };
+  WrappingMode wrap_w{ WrappingMode::Repeat };
+  FilterMode min_filter{ FilterMode::Linear };
+  FilterMode mag_filter{ FilterMode::Linear };
+  MipMapMode mipmap_mode{ MipMapMode::Linear };
+  float min_lod{ 0.0f };
+  float max_lod{ 1.0f };
+  BorderColor border_color{ BorderColor::FloatOpaqueBlack };
+  std::optional<CompareOp> compare_op{ std::nullopt };
 };
 
 class VkTextureSampler

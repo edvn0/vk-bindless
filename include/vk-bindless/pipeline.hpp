@@ -1,7 +1,9 @@
 #pragma once
 
 #include "vk-bindless/command_buffer.hpp"
+#include "vk-bindless/common.hpp"
 #include "vk-bindless/forward.hpp"
+#include "vk-bindless/handle.hpp"
 #include "vk-bindless/holder.hpp"
 
 #include <algorithm>
@@ -12,29 +14,21 @@
 
 namespace VkBindless {
 
-struct ComputePipelineDescription
+namespace detail {
+template<typename Derived, typename DescriptionType>
+class VkPipelineBase
 {
-  ShaderModuleHandle shader;
-  SpecialisationConstantDescription specialisation_constants{};
-  std::string entry_point {"main"};
-  std::string debug_name{};
-};
-
-class VkComputePipeline
-{
+protected:
   VkPipeline pipeline{ VK_NULL_HANDLE };
   VkPipelineLayout layout{ VK_NULL_HANDLE };
-  VkShaderStageFlags stage_flags{ VK_SHADER_STAGE_COMPUTE_BIT };
-
-  ComputePipelineDescription description{};
+  VkShaderStageFlags stage_flags{};
+  bool new_shader{ false };
+  DescriptionType description{};
 
   VkDescriptorSetLayout descriptor_set_layout{ VK_NULL_HANDLE };
   VkDescriptorSetLayout last_descriptor_set_layout{ VK_NULL_HANDLE };
 
   std::unique_ptr<std::byte[]> specialisation_constants_storage{ nullptr };
-
-  friend class CommandBuffer;
-  friend class Context;
 
 public:
   [[nodiscard]] auto get_layout() const -> const VkPipelineLayout&
@@ -49,6 +43,33 @@ public:
   {
     return pipeline;
   }
+
+  auto update_shader(ShaderModuleHandle shader)
+  {
+    description.shader = shader;
+    new_shader = true;
+  }
+
+  // Let derived classes implement create()
+};
+}
+
+struct ComputePipelineDescription
+{
+  ShaderModuleHandle shader;
+  SpecialisationConstantDescription specialisation_constants{};
+  std::string entry_point{ "main" };
+  std::string debug_name{};
+};
+
+class VkComputePipeline
+  : public detail::VkPipelineBase<VkComputePipeline, ComputePipelineDescription>
+{
+  friend class ::VkBindless::CommandBuffer;
+  friend class ::VkBindless::Context;
+
+public:
+  VkComputePipeline() { stage_flags = VK_SHADER_STAGE_COMPUTE_BIT; }
 
   static auto create(IContext* context, const ComputePipelineDescription& desc)
     -> Holder<ComputePipelineHandle>;
@@ -75,22 +96,25 @@ struct GraphicsPipelineDescription
 
   [[nodiscard]] auto get_colour_attachments_count() const -> std::uint32_t
   {
-    const auto result = std::ranges::count_if(color, [](const ColourAttachment& attachment) {
+    const auto result =
+      std::ranges::count_if(color, [](const ColourAttachment& attachment) {
         return attachment.format != Format::Invalid;
       });
     return static_cast<std::uint32_t>(result);
   }
+
+  auto is_compatible(const GraphicsPipelineDescription& other) const
+  {
+    return other.vertex_input == vertex_input;
+  }
 };
 
 class VkGraphicsPipeline
+  : public detail::VkPipelineBase<VkGraphicsPipeline,
+                                  GraphicsPipelineDescription>
 {
-  VkPipelineLayout layout{ VK_NULL_HANDLE };
-  VkPipeline pipeline{ VK_NULL_HANDLE };
-  VkShaderStageFlags stage_flags{ VK_SHADER_STAGE_ALL_GRAPHICS };
-  GraphicsPipelineDescription description{};
-  std::uint32_t binding_count{ 0 };
-  std::uint32_t attribute_count{ 0 };
-  std::uint32_t view_mask{ 0 };
+  friend class ::VkBindless::CommandBuffer;
+  friend class ::VkBindless::Context;
 
   std::array<VkVertexInputBindingDescription,
              VertexInput::input_bindings_max_count>
@@ -98,27 +122,19 @@ class VkGraphicsPipeline
   std::array<VkVertexInputAttributeDescription,
              VertexInput::vertex_attribute_max_count>
     attributes{};
-  VkDescriptorSetLayout descriptor_set_layout{ VK_NULL_HANDLE };
-  VkDescriptorSetLayout last_descriptor_set_layout{ VK_NULL_HANDLE };
-
-  std::unique_ptr<std::byte[]> specialisation_constants_storage{ nullptr };
-
-  friend class CommandBuffer;
-  friend class Context;
+  std::uint32_t binding_count{ 0 };
+  std::uint32_t attribute_count{ 0 };
+  std::uint32_t view_mask{ 0 };
 
 public:
-  [[nodiscard]] auto get_layout() const -> const VkPipelineLayout&
+  VkGraphicsPipeline() { stage_flags = VK_SHADER_STAGE_ALL_GRAPHICS; }
+
+  [[nodiscard]] auto get_stage_flags() const -> VkShaderStageFlags
   {
-    return layout;
-  }
-  [[nodiscard]] auto get_stage_flags() const -> VkShaderStageFlags;
-  [[nodiscard]] auto get_pipeline() const -> const VkPipeline&
-  {
-    return pipeline;
+    return stage_flags;
   }
 
   static auto create(IContext* context, const GraphicsPipelineDescription& desc)
     -> Holder<GraphicsPipelineHandle>;
 };
-
 }

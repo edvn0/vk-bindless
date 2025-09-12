@@ -40,6 +40,30 @@ to_vk_stage(const ShaderStage stage) -> VkShaderStageFlagBits
   return VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM; // fallback
 }
 
+struct ShaderError
+{
+  enum class Code : std::uint8_t
+  {
+    file_not_found,
+    file_read_failed,
+    parse_failed,
+    preamble_failed,
+    compilation_failed,
+    module_creation_failed,
+    reflection_failed,
+    unknown_error
+  };
+
+  Code code;
+  std::string error;
+
+  ShaderError(Code c, std::string msg)
+    : code(c)
+    , error(std::move(msg))
+  {
+  }
+};
+
 class VkShader
 {
   struct PushConstantInfo
@@ -63,7 +87,7 @@ public:
            VkShaderStageFlagBits);
 
   static auto create(IContext* context, const std::filesystem::path& path)
-    -> Holder<ShaderModuleHandle>;
+    -> Expected<Holder<ShaderModuleHandle>, ShaderError>;
 
   [[nodiscard]] auto get_modules() const -> const auto& { return modules; }
 
@@ -105,7 +129,7 @@ private:
   VkShaderStageFlagBits flags{ VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM };
 
   static auto compile(IContext* device, const std::filesystem::path& path)
-    -> Expected<VkShader, std::string>;
+    -> Expected<VkShader, ShaderError>;
 
   void move_from(VkShader&& other)
   {

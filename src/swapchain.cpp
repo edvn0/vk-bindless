@@ -446,7 +446,7 @@ Swapchain::resize(std::uint32_t new_width, std::uint32_t new_height) -> void
   }
   swapchain_textures.fill(TextureHandle{});
 
-  for (VkSemaphore sem : acquire_semaphores) {
+  for (VkSemaphore& sem : acquire_semaphores) {
     if (sem != VK_NULL_HANDLE) {
       context().pre_frame_task([sem](auto& ctx) {
         vkDestroySemaphore(
@@ -456,7 +456,7 @@ Swapchain::resize(std::uint32_t new_width, std::uint32_t new_height) -> void
     }
   }
 
-  for (VkFence fence : present_fences) {
+  for (VkFence& fence : present_fences) {
     if (fence != VK_NULL_HANDLE) {
       context().pre_frame_task([fence](auto& ctx) {
         vkDestroyFence(ctx.get_device(), fence, ctx.get_allocation_callbacks());

@@ -69,6 +69,8 @@ private:
   };
   std::array<TextureHandle, max_swapchain_images> swapchain_textures{};
   std::array<VkSemaphore, max_swapchain_images> acquire_semaphores{};
+  std::array<uint32_t, max_swapchain_images> acquire_semaphore_indices{};
+  std::array<VkSemaphore, max_swapchain_images> acquire_semaphore_for_image{};
   std::array<VkFence, max_swapchain_images> present_fences{};
   std::array<std::uint64_t, max_swapchain_images> timeline_wait_values{};
 

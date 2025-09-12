@@ -50,6 +50,7 @@ add_library(${PROJECT_NAME}
     src/swapchain.cpp
     src/event_system.cpp
     src/imgui_renderer.cpp
+    src/line_canvas.cpp
     src/buffer.cpp
     src/camera.cpp
     src/mesh.cpp
@@ -73,20 +74,19 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         vk-bootstrap
         CustomVMA
         glfw
-        
         spirv-reflect-static
         meshoptimizer::meshoptimizer
         assimp::assimp
         stb::stb
-        ktx
         PUBLIC
         glm::glm
         imgui::imgui
         glslang::glslang
         SPIRV-Tools-static
         SPIRV-Tools-opt
+        PUBLIC
+        ktx
 )
-
 target_compile_definitions(${PROJECT_NAME} PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_LEFT_HANDED)
 
 if (TARGET implot::implot)
@@ -111,6 +111,7 @@ if (ENABLE_TESTING)
     add_executable(test_vk_bindless
         test/main.cpp
         test/integration_tests.cpp
+        test/container_tests.cpp
         test/shader_compilation_tests.cpp
     )
     target_link_libraries(test_vk_bindless
@@ -122,6 +123,9 @@ if (ENABLE_TESTING)
     )
     add_test(NAME test_vk_bindless COMMAND test_vk_bindless)
 endif ()
+
+add_executable(shader_compiler src/tool_compiler.cpp)
+target_link_libraries(shader_compiler PRIVATE VkBindless)
 
 add_library(VkBindless::VkBindless ALIAS VkBindless)
 

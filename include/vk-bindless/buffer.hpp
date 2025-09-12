@@ -8,9 +8,11 @@
 #include <cstdint>
 
 #include <cstring>
+#include <functional>
 #include <ranges>
 #include <span>
 #include <string_view>
+#include <vector>
 #include <vulkan/vulkan.h>
 
 namespace VkBindless {
@@ -64,12 +66,27 @@ public:
     -> Holder<BufferHandle>;
 
   [[nodiscard]] auto get_buffer() const -> VkBuffer { return buffer; }
-  [[nodiscard]]auto get_mapped_pointer() const -> void* { return allocation.mapped_data; }
-  [[nodiscard]]auto is_mapped() const -> bool { return allocation.mapped_data != nullptr; }
-  [[nodiscard]]auto get_size() const -> VkDeviceSize { return size; }
-  [[nodiscard]]auto get_memory() const -> VkDeviceMemory { return allocation.memory; }
-  [[nodiscard]] auto get_usage_flags() const -> VkBufferUsageFlags { return usage_flags; }
-  [[nodiscard]] auto get_memory_flags() const -> VkMemoryPropertyFlags { return memory_flags; }
+  [[nodiscard]] auto get_mapped_pointer() const -> void*
+  {
+    return allocation.mapped_data;
+  }
+  [[nodiscard]] auto is_mapped() const -> bool
+  {
+    return allocation.mapped_data != nullptr;
+  }
+  [[nodiscard]] auto get_size() const -> VkDeviceSize { return size; }
+  [[nodiscard]] auto get_memory() const -> VkDeviceMemory
+  {
+    return allocation.memory;
+  }
+  [[nodiscard]] auto get_usage_flags() const -> VkBufferUsageFlags
+  {
+    return usage_flags;
+  }
+  [[nodiscard]] auto get_memory_flags() const -> VkMemoryPropertyFlags
+  {
+    return memory_flags;
+  }
 
   auto flush_mapped_memory(IContext&,
                            std::uint64_t offset = 0,
@@ -80,17 +97,19 @@ public:
 
   auto upload(std::ranges::contiguous_range auto R, std::uint64_t offset = 0)
   {
-    constexpr auto Size = std::ranges::range_size_t<decltype(R)>::value;
+    constexpr auto Size = std::ranges::range_size_t<decltype(R)>();
     if (!is_mapped()) {
       throw std::runtime_error("Buffer is not mapped");
     }
     if (R.size() * Size > size) {
       throw std::runtime_error("Data size exceeds buffer size");
     }
-    const auto offset_to_pointer = static_cast<std::byte*>(allocation.mapped_data) + offset;
+    const auto offset_to_pointer =
+      static_cast<std::byte*>(allocation.mapped_data) + offset;
     std::memcpy(offset_to_pointer, R.data(), R.size() * Size);
   }
-  auto upload(const std::span<const std::byte> data, std::uint64_t offset = 0) const
+  auto upload(const std::span<const std::byte> data,
+              std::uint64_t offset = 0) const
   {
     if (!is_mapped()) {
       throw std::runtime_error("Buffer is not mapped");
@@ -98,7 +117,8 @@ public:
     if (data.size() > size) {
       throw std::runtime_error("Data size exceeds buffer size");
     }
-    const auto offset_to_pointer = static_cast<std::byte*>(allocation.mapped_data) + offset;
+    const auto offset_to_pointer =
+      static_cast<std::byte*>(allocation.mapped_data) + offset;
     std::memcpy(offset_to_pointer, data.data(), data.size());
   }
   template<typename T>
@@ -110,8 +130,38 @@ public:
     if (data.size_bytes() > size) {
       throw std::runtime_error("Data size exceeds buffer size");
     }
-    const auto offset_to_pointer = static_cast<std::byte*>(allocation.mapped_data) + offset;
+    const auto offset_to_pointer =
+      static_cast<std::byte*>(allocation.mapped_data) + offset;
     std::memcpy(offset_to_pointer, data.data(), data.size_bytes());
+  }
+};
+
+struct IndirectBuffer final
+{
+private:
+  IContext* context{ nullptr };
+  Holder<BufferHandle> indirect_buffer;
+  std::vector<VkDrawIndexedIndirectCommand> draw_commands{};
+
+public:
+  IndirectBuffer(IContext& ctx,
+                 std::size_t max_draw_commands,
+                 StorageType = StorageType::DeviceLocal);
+
+  auto upload() -> void;
+  auto as_span() const -> std::span<VkDrawIndexedIndirectCommand>;
+  auto get_buffer() const { return *indirect_buffer; }
+
+  template<typename Pred>
+  auto select_to(IndirectBuffer& out, Pred&& pred)
+  {
+    out.draw_commands.clear();
+    for (const auto& c : draw_commands) {
+      if (std::forward<Pred>(pred)(c)) {
+        out.draw_commands.push_back(c);
+      }
+    }
+    out.upload();
   }
 };
 

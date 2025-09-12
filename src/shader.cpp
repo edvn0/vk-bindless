@@ -4,7 +4,10 @@
 #include <fstream>
 
 #include "vk-bindless/graphics_context.hpp"
+#include "vk-bindless/scope_exit.hpp"
 #include "vk-bindless/vulkan_context.hpp"
+
+#include "./shader_compilation_impl.inl"
 
 #include <glslang/Include/glslang_c_interface.h>
 #include <glslang/Public/resource_limits_c.h>
@@ -129,6 +132,7 @@ static constexpr glslang_resource_t
                          }, };
 
 namespace VkBindless {
+
 namespace {
 auto
 to_glslang_stage(const ShaderStage stage) -> glslang_stage_t
@@ -155,19 +159,20 @@ to_glslang_stage(const ShaderStage stage) -> glslang_stage_t
 
 auto
 VkShader::create(IContext* context, const std::filesystem::path& path)
-  -> Holder<ShaderModuleHandle>
+  -> Expected<Holder<ShaderModuleHandle>, ShaderError>
 {
   auto& pool = context->get_shader_module_pool();
-
   auto compiled = VkShader::compile(context, path);
   if (!compiled) {
-    return Holder<ShaderModuleHandle>::invalid();
+    return unexpected<ShaderError>(compiled.error());
   }
 
   const auto handle = pool.create(std::move(compiled.value()));
-
   if (!handle.valid()) {
-    return Holder<ShaderModuleHandle>::invalid();
+    return unexpected<ShaderError>{
+      ShaderError{ ShaderError::Code::module_creation_failed,
+                   "Failed to create shader module handle in pool" },
+    };
   }
 
   return Holder{ context, handle };
@@ -175,25 +180,36 @@ VkShader::create(IContext* context, const std::filesystem::path& path)
 
 auto
 VkShader::compile(IContext* context, const std::filesystem::path& path)
-  -> Expected<VkShader, std::string>
+  -> Expected<VkShader, ShaderError>
 {
   auto stream = std::ifstream{ path };
   if (!stream) {
-    return unexpected<std::string>("Failed to open shader file: " +
-                                   path.string());
+    return unexpected<ShaderError>(ShaderError(
+      ShaderError::Code::file_not_found,
+      std::format("Failed to open shader file: {}", path.string())));
   }
 
-  std::string source_code((std::istreambuf_iterator<char>(stream)),
-                          std::istreambuf_iterator<char>());
+  std::string source_code;
+  try {
+    source_code = std::string((std::istreambuf_iterator<char>(stream)),
+                              std::istreambuf_iterator<char>());
+  } catch (const std::exception& e) {
+    return unexpected<ShaderError>(
+      ShaderError(ShaderError::Code::file_read_failed,
+                  std::format("Failed to read shader file: {}", e.what())));
+  }
+
   auto parsed = ShaderParser::parse(source_code);
   if (!parsed) {
-    auto error = std::format("Failed to parse shader: {}",
-                             ShaderUtils::error_to_string(parsed.error()));
-    return unexpected<std::string>(error);
+    return unexpected<ShaderError>(
+      ShaderError(ShaderError::Code::parse_failed,
+                  std::format("Failed to parse shader: {}",
+                              ShaderUtils::error_to_string(parsed.error()))));
   }
 
   if (!ShaderParser::prepend_preamble(*parsed)) {
-    return unexpected<std::string>("Failed to prepend shader preamble");
+    return unexpected<ShaderError>(ShaderError(
+      ShaderError::Code::preamble_failed, "Failed to prepend shader preamble"));
   }
 
   std::vector<VkShader::StageModule> modules;
@@ -205,10 +221,13 @@ VkShader::compile(IContext* context, const std::filesystem::path& path)
                                  entry.source_code,
                                  spirv,
                                  &default_resource);
+
     if (!result) {
-      return unexpected<std::string>("Compilation failed for stage " +
-                                     to_string(entry.stage) + ": " +
-                                     result.error());
+      return unexpected<ShaderError>(
+        ShaderError(ShaderError::Code::compilation_failed,
+                    std::format("Compilation failed for stage {}: {}",
+                                to_string(entry.stage),
+                                result.error())));
     }
 
     const VkShaderModuleCreateInfo create_info{
@@ -216,28 +235,34 @@ VkShader::compile(IContext* context, const std::filesystem::path& path)
       .pNext = nullptr,
       .flags = 0,
       .codeSize = spirv.size(),
-      .pCode = reinterpret_cast<const uint32_t*>(spirv.data()),
+      .pCode = reinterpret_cast<const std::uint32_t*>(spirv.data()),
     };
 
     VkShaderModule module;
     if (vkCreateShaderModule(
           context->get_device(), &create_info, nullptr, &module) !=
         VK_SUCCESS) {
-      return unexpected<std::string>("vkCreateShaderModule failed for stage " +
-                                     to_string(entry.stage));
+      return unexpected<ShaderError>(
+        ShaderError(ShaderError::Code::module_creation_failed,
+                    std::format("vkCreateShaderModule failed for stage {}",
+                                to_string(entry.stage))));
     }
 
+    // Reflection handling
     SpvReflectShaderModule reflect_module{};
     if (spvReflectCreateShaderModule(
           spirv.size(), spirv.data(), &reflect_module) ==
         SPV_REFLECT_RESULT_SUCCESS) {
+
       auto count = 0U;
       if (auto res = spvReflectEnumeratePushConstantBlocks(
             &reflect_module, &count, nullptr);
           res == SPV_REFLECT_RESULT_SUCCESS && count > 0) {
+
         std::vector<SpvReflectBlockVariable*> blocks(count);
         res = spvReflectEnumeratePushConstantBlocks(
           &reflect_module, &count, blocks.data());
+
         if (res == SPV_REFLECT_RESULT_SUCCESS) {
           for (auto* block : blocks) {
             if (block->size > push_constant_info.size) {
@@ -261,6 +286,7 @@ VkShader::compile(IContext* context, const std::filesystem::path& path)
          std::views::transform([](const auto& e) { return e.stage; })) {
     total_stages |= to_vk_stage(stage);
   }
+
   auto flags = static_cast<VkShaderStageFlagBits>(total_stages);
   push_constant_info.stages = flags;
 
@@ -283,5 +309,4 @@ VkShader::VkShader(IContext* ctx,
     glslang_is_initialised = true;
   }
 }
-
 }

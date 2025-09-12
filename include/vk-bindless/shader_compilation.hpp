@@ -11,9 +11,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <glslang/Include/glslang_c_interface.h>
-#include <glslang/Include/glslang_c_shader_types.h>
-
 namespace VkBindless {
 
 enum class ParseError : std::uint8_t
@@ -233,7 +230,8 @@ public:
     return result;
   }
 
-  static auto prepend_preamble(ParsedShader& parsed) -> bool;
+  static auto prepend_preamble(ParsedShader&) -> bool;
+  static auto destroy_context() -> void;
 
 private:
   static auto trim_string(const std::string& str) -> std::string
@@ -246,13 +244,6 @@ private:
     return str.substr(start, end - start + 1);
   }
 };
-
-auto
-compile_shader(glslang_stage_t stage,
-               const std::string& source_code,
-               std::vector<std::uint8_t>& output,
-               const glslang_resource_t* resources = nullptr)
-  -> Expected<void, std::string>;
 
 // Utility functions for working with parsed shaders
 namespace ShaderUtils {

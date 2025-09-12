@@ -421,6 +421,23 @@ CommandBuffer::cmd_draw_indexed(std::uint32_t index_count,
                    vertex_offset,
                    base_instance);
 }
+
+auto
+CommandBuffer::cmd_draw_indexed_indirect(BufferHandle indirect_buffer,
+                                         size_t indirect_buffer_offset,
+                                         uint32_t draw_count,
+                                         uint32_t stride) -> void
+{
+  auto* bufIndirect = *context->get_buffer_pool().get(indirect_buffer);
+
+  vkCmdDrawIndexedIndirect(wrapper->command_buffer,
+                           bufIndirect->get_buffer(),
+                           indirect_buffer_offset,
+                           draw_count,
+                           stride ? stride
+                                  : sizeof(VkDrawIndexedIndirectCommand));
+}
+
 auto
 CommandBuffer::cmd_dispatch_thread_groups(const Dimensions& xyz) -> void
 {
@@ -535,15 +552,13 @@ CommandBuffer::cmd_push_constants(const std::span<const std::byte> data) -> void
                                               const auto alignment) {
     return (s + alignment - 1) & ~(alignment - 1);
   };
-  static const auto min_align =
-    context->vulkan_properties.base.limits.minUniformBufferOffsetAlignment;
 
   vkCmdPushConstants(
     wrapper->command_buffer,
     pipeline_layout,
     stage_flags,
     0,
-    static_cast<std::uint32_t>(get_aligned_size(data.size_bytes(), min_align)),
+    static_cast<std::uint32_t>(get_aligned_size(data.size_bytes(), 4)),
     data.data());
 }
 

@@ -5,6 +5,7 @@
 #include <array>
 #include <cassert>
 #include <cstdint>
+#include <glm/glm.hpp>
 #include <span>
 #include <string>
 #include <variant>
@@ -258,6 +259,7 @@ enum class Format : uint8_t
 
   RGBA_UN8,
   RGBA_UI32,
+  RGBA_UI16,
   RGBA_F16,
   RGBA_F32,
   RGBA_SRGB8,
@@ -293,7 +295,7 @@ struct VertexInput final
     VertexFormat format = VertexFormat::Invalid;
     std::uintptr_t offset = 0;
 
-    auto operator<=>(const VertexAttribute& other) const = default;
+    auto operator<=>(const VertexAttribute&) const = default;
   };
   std::array<VertexAttribute, vertex_attribute_max_count> attributes{};
   struct VertexInputBinding final
@@ -328,6 +330,18 @@ struct VertexInput final
     return n;
   }
 
+  [[nodiscard]] auto compute_vertex_size() const
+  {
+    std::uint32_t vertex_size = 0;
+    for (auto i = 0U; i < vertex_attribute_max_count &&
+                      attributes[i].format != VertexFormat::Invalid;
+         i++) {
+      vertex_size +=
+        get_vertex_format_size<std::uint32_t>(attributes[i].format);
+    }
+    return vertex_size;
+  }
+
   auto operator<=>(const VertexInput& other) const = default;
 
   static auto create(
@@ -345,55 +359,7 @@ struct VertexInput final
         .format = format,
         .offset = offset,
       };
-      offset += [&]() {
-        switch (format) {
-          case VertexFormat::Float1:
-          case VertexFormat::Byte1:
-          case VertexFormat::UByte1:
-          case VertexFormat::Short1:
-          case VertexFormat::UShort1:
-          case VertexFormat::Int1:
-          case VertexFormat::UInt1:
-          case VertexFormat::HalfFloat1:
-            return 4;
-          case VertexFormat::Float2:
-          case VertexFormat::Byte2:
-          case VertexFormat::UByte2:
-          case VertexFormat::Short2:
-          case VertexFormat::UShort2:
-          case VertexFormat::Int2:
-          case VertexFormat::UInt2:
-          case VertexFormat::HalfFloat2:
-          case VertexFormat::Byte2Norm:
-          case VertexFormat::UByte2Norm:
-            return 8;
-          case VertexFormat::Float3:
-          case VertexFormat::Byte3:
-          case VertexFormat::UByte3:
-          case VertexFormat::Short3:
-          case VertexFormat::UShort3:
-          case VertexFormat::Int3:
-          case VertexFormat::UInt3:
-          case VertexFormat::HalfFloat3:
-            return 12;
-          case VertexFormat::Float4:
-          case VertexFormat::Byte4:
-          case VertexFormat::UByte4:
-          case VertexFormat::Short4:
-          case VertexFormat::UShort4:
-          case VertexFormat::Int4:
-          case VertexFormat::UInt4:
-          case VertexFormat::HalfFloat4:
-          case VertexFormat::Byte4Norm:
-          case VertexFormat::UByte4Norm:
-            return 16;
-          case VertexFormat::Int_2_10_10_10_REV:
-            return 4;
-          default:
-            assert(false);
-        }
-        return 4;
-      }();
+      offset += vi.get_vertex_format_size<std::uint32_t>(format);
       location++;
     }
     vi.input_bindings[0] = VertexInputBinding{ .stride = offset };
@@ -405,62 +371,59 @@ struct VertexInput final
         .format = format,
         .offset = offset,
       };
-      offset += [&]() {
-        switch (format) {
-          case VertexFormat::Float1:
-          case VertexFormat::Byte1:
-          case VertexFormat::UByte1:
-          case VertexFormat::Short1:
-          case VertexFormat::UShort1:
-          case VertexFormat::Int1:
-          case VertexFormat::UInt1:
-          case VertexFormat::HalfFloat1:
-            return 4;
-          case VertexFormat::Float2:
-          case VertexFormat::Byte2:
-          case VertexFormat::UByte2:
-          case VertexFormat::Short2:
-          case VertexFormat::UShort2:
-          case VertexFormat::Int2:
-          case VertexFormat::UInt2:
-          case VertexFormat::HalfFloat2:
-          case VertexFormat::Byte2Norm:
-          case VertexFormat::UByte2Norm:
-            return 8;
-          case VertexFormat::Float3:
-          case VertexFormat::Byte3:
-          case VertexFormat::UByte3:
-          case VertexFormat::Short3:
-          case VertexFormat::UShort3:
-          case VertexFormat::Int3:
-          case VertexFormat::UInt3:
-          case VertexFormat::HalfFloat3:
-            return 12;
-          case VertexFormat::Float4:
-          case VertexFormat::Byte4:
-          case VertexFormat::UByte4:
-          case VertexFormat::Short4:
-          case VertexFormat::UShort4:
-          case VertexFormat::Int4:
-          case VertexFormat::UInt4:
-          case VertexFormat::HalfFloat4:
-          case VertexFormat::Byte4Norm:
-          case VertexFormat::UByte4Norm:
-            return 16;
-          case VertexFormat::Int_2_10_10_10_REV:
-            return 4;
-          default:
-            assert(false);
-        }
-        return 4;
-      }();
+      offset += vi.get_vertex_format_size<std::uint32_t>(format);
       location++;
     }
     if (instance_formats.size() > 0) {
-      vi.input_bindings[1] = VertexInputBinding{ .stride = offset };
+      vi.input_bindings[1] = VertexInputBinding{
+        .stride = offset,
+        .rate = VertexInputBinding::Rate::Instance,
+      };
     }
 
     return vi;
+  }
+
+private:
+  template<std::unsigned_integral Out = std::size_t>
+  auto get_vertex_format_size(VertexFormat format) const -> Out
+  {
+#define SIZE4(LVKBaseType, BaseType)                                           \
+  case VertexFormat::LVKBaseType##1:                                           \
+    return static_cast<Out>(sizeof(BaseType) * 1ULL);                          \
+  case VertexFormat::LVKBaseType##2:                                           \
+    return static_cast<Out>(sizeof(BaseType) * 2ULL);                          \
+  case VertexFormat::LVKBaseType##3:                                           \
+    return static_cast<Out>(sizeof(BaseType) * 3ULL);                          \
+  case VertexFormat::LVKBaseType##4:                                           \
+    return static_cast<Out>(sizeof(BaseType) * 4ULL);
+#define SIZE2_4_NORM(LVKBaseType, BaseType)                                    \
+  case VertexFormat::LVKBaseType##2Norm:                                       \
+    return static_cast<Out>(sizeof(BaseType) * 2ULL);                          \
+  case VertexFormat::LVKBaseType##4Norm:                                       \
+    return static_cast<Out>(sizeof(BaseType) * 4ULL);
+
+    switch (format) {
+      SIZE4(Float, float);
+      SIZE4(Byte, uint8_t);
+      SIZE4(UByte, uint8_t);
+      SIZE4(Short, uint16_t);
+      SIZE4(UShort, uint16_t);
+      SIZE2_4_NORM(Byte, uint8_t);
+      SIZE2_4_NORM(UByte, uint8_t);
+      SIZE2_4_NORM(Short, uint16_t);
+      SIZE2_4_NORM(UShort, uint16_t);
+      SIZE4(Int, uint32_t);
+      SIZE4(UInt, uint32_t);
+      SIZE4(HalfFloat, uint16_t);
+      case VertexFormat::Int_2_10_10_10_REV:
+        return sizeof(uint32_t);
+      default:
+        assert(false);
+        return 0;
+    }
+#undef SIZE4
+#undef SIZE2_4_NORM
   }
 };
 
@@ -667,5 +630,37 @@ struct Offset3D
   {                                                                            \
     return static_cast<E>(~std::to_underlying(value));                         \
   }
+
+struct BoundingBox
+{
+  glm::vec3 minimum{ std::numeric_limits<float>::max() };
+  glm::vec3 maximum{ std::numeric_limits<float>::lowest() };
+  constexpr auto min() const -> const auto& { return minimum; }
+  constexpr auto max() const -> const auto& { return maximum; }
+
+  BoundingBox() = default;
+  BoundingBox(const glm::vec3& mini, const glm::vec3& maxi)
+    : minimum(mini)
+    , maximum(maxi)
+  {
+  }
+
+  auto expand(const glm::vec3& point)
+  {
+    minimum = glm::min(minimum, point);
+    maximum = glm::max(maximum, point);
+  }
+  auto expand(const BoundingBox& aabb)
+  {
+    expand(aabb.min());
+    expand(aabb.max());
+  }
+
+  constexpr auto is_valid() const
+  {
+    return minimum.x <= maximum.x && minimum.y <= maximum.y &&
+           minimum.z <= maximum.z;
+  }
+};
 
 }

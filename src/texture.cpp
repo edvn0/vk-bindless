@@ -1,5 +1,6 @@
 #include "vk-bindless/texture.hpp"
 
+#include "ktx.h"
 #include "vk-bindless/allocator_interface.hpp"
 #include "vk-bindless/graphics_context.hpp"
 #include "vk-bindless/object_pool.hpp"
@@ -9,6 +10,8 @@
 #include <assimp/texture.h>
 #include <cmath>
 #include <fstream>
+#include <iostream>
+#include <print>
 #include <type_traits>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
@@ -62,6 +65,60 @@ max(T0&& first, Ts&&... rest)
   auto max_value = std::forward<T0>(first);
   ((max_value = max_value < rest ? rest : max_value), ...);
   return max_value;
+}
+
+namespace {
+auto
+make_ktx_copies(const ktxTexture2* ktx,
+                uint32_t base_level,
+                uint32_t level_count,
+                uint32_t base_layer)
+{
+  const uint32_t levels =
+    level_count ? level_count : ktx->numLevels - base_level;
+  const uint32_t layers = ktx->numLayers;
+  const uint32_t faces = ktx->numFaces ? ktx->numFaces : 1;
+
+  std::vector<VkBufferImageCopy> copies;
+  copies.reserve(levels * layers * faces);
+
+  for (uint32_t ml = 0; ml < levels; ++ml) {
+    const uint32_t level = base_level + ml;
+    const uint32_t mip_w = std::max(1u, ktx->baseWidth >> level);
+    const uint32_t mip_h = std::max(1u, ktx->baseHeight >> level);
+
+    for (uint32_t la = 0; la < layers; ++la) {
+      for (uint32_t fa = 0; fa < faces; ++fa) {
+        ktx_size_t byte_offset = 0;
+        KTX_error_code rc =
+          ktxTexture_GetImageOffset(ktxTexture(const_cast<ktxTexture2*>(ktx)),
+                                    level,
+                                    la,
+                                    fa,
+                                    &byte_offset);
+        if (rc != KTX_SUCCESS)
+          continue;
+
+        const uint32_t array_layer = base_layer + la * faces + fa;
+
+        VkBufferImageCopy c{};
+        c.bufferOffset = static_cast<VkDeviceSize>(byte_offset);
+        c.bufferRowLength = 0;
+        c.bufferImageHeight = 0;
+        c.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        c.imageSubresource.mipLevel = level;
+        c.imageSubresource.baseArrayLayer = array_layer;
+        c.imageSubresource.layerCount = 1;
+        c.imageOffset = { 0, 0, 0 };
+        c.imageExtent = { mip_w, mip_h, 1 };
+
+        copies.push_back(c);
+      }
+    }
+  }
+
+  return copies;
+}
 }
 
 auto
@@ -127,37 +184,64 @@ VkTexture::create_internal_image(IContext& ctx,
                                     description.extent.height));
   }
 
-  const auto& data = description.data;
-  if (data.empty())
-    return;
-
-  static constexpr auto calculate_mip_levels =
-    [](std::unsigned_integral auto width,
-       std::unsigned_integral auto height) constexpr {
-      using T = std::common_type_t<decltype(width), decltype(height)>;
-      // Guard against zero (bit_width(0) is undefined)
-      if (width == 0 || height == 0) {
-        return T{ 0 };
-      }
-
-      const T max_dimension = std::max(width, height);
-
-      return static_cast<T>(std::bit_width(max_dimension));
-    };
-
   const auto& vulkan_context = dynamic_cast<Context&>(ctx);
-  const auto buffer_row_length = 0;
-  const auto computed_mip_levels =
-    calculate_mip_levels(description.extent.width, description.extent.height);
-  vulkan_context.staging_allocator->upload(*this,
-    VkRect2D{ .offset = {0, 0}, .extent = {description.extent.width, description.extent.height,}, },
-    0, 1, 0, description.layers, image_info.format, data.data(), buffer_row_length);
 
-  if (mip_levels > 1 && computed_mip_levels > 1) {
-    vulkan_context.staging_allocator->generate_mipmaps(
-      *this, get_extent().width, get_extent().height, mip_levels, array_layers);
+  const auto& data = description.data;
+  if (!data.empty()) {
+    static constexpr auto calculate_mip_levels =
+      [](std::unsigned_integral auto width,
+         std::unsigned_integral auto height) constexpr {
+        using T = std::common_type_t<decltype(width), decltype(height)>;
+        // Guard against zero (bit_width(0) is undefined)
+        if (width == 0 || height == 0) {
+          return T{ 0 };
+        }
 
-    set_layout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        const T max_dimension = std::max(width, height);
+
+        return static_cast<T>(std::bit_width(max_dimension));
+      };
+    const auto buffer_row_length = 0;
+    const auto computed_mip_levels =
+      calculate_mip_levels(description.extent.width, description.extent.height);
+
+    // Original single-image upload (unchanged)
+    vulkan_context.staging_allocator->upload(
+      *this,
+      VkRect2D{
+        .offset = { 0, 0 },
+        .extent = { description.extent.width, description.extent.height } },
+      0,
+      1,
+      0,
+      description.layers,
+      image_info.format,
+      data.data(),
+      buffer_row_length);
+
+    if (mip_levels > 1 && computed_mip_levels > 1) {
+      vulkan_context.staging_allocator->generate_mipmaps(*this,
+                                                         get_extent().width,
+                                                         get_extent().height,
+                                                         mip_levels,
+                                                         array_layers);
+      set_layout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
+
+    return;
+  }
+
+  if (description.fully_specified_data != nullptr) {
+    auto ktx = description.fully_specified_data;
+
+    auto* texture_data = ktxTexture_GetData(ktxTexture(ktx));
+    auto size_bytes =
+      ktxTexture_GetDataSize(ktxTexture(ktx)); // after transcode
+
+    auto copies = make_ktx_copies(ktx, 0, ktx->numLevels, 0);
+
+    vulkan_context.staging_allocator->upload(
+      *this, texture_data, size_bytes, copies);
   }
 }
 
@@ -173,7 +257,10 @@ VkTexture::VkTexture(IContext& ctx, const VkTextureDescription& description)
                                TextureUsageFlags::Storage) }
   , is_depth{ static_cast<bool>(description.usage_flags &
                                 TextureUsageFlags::DepthStencilAttachment) }
+  , debug_name{ description.debug_name }
 {
+  assert(!debug_name.empty());
+
   if (!description.externally_created_image) {
     create_internal_image(ctx, description);
   } else {
@@ -221,9 +308,7 @@ VkTexture::VkTexture(IContext& ctx, const VkTextureDescription& description)
   mip_layer_views.resize(mip_levels * array_layers);
 
   // Less than two views means just one view for the entire image
-  if (mip_levels == 1 && array_layers == 1) {
-    mip_layer_views.at(0) = image_view;
-  } else {
+  if (!(mip_levels == 1 && array_layers == 1)) {
     for (auto mip = 0U; mip < mip_levels; ++mip) {
       for (auto layer = 0U; layer < array_layers; ++layer) {
         const auto index = mip * array_layers + layer;
@@ -518,10 +603,9 @@ VkTexture::get_or_create_framebuffer_view(IContext& context,
     &view_info,
     nullptr,
     &cached_framebuffer_views[mip * cube_array_layers + layer]));
-  const auto name = std::format("Framebuffer_({})_view (mip: {}, layer: {})",
-                                static_cast<const void*>(image),
-                                mip,
-                                layer);
+
+  const auto name =
+    std::format("{}_FBView (mip: {}, layer: {})", debug_name, mip, layer);
   set_name_for_object(
     context.get_device(),
     VK_OBJECT_TYPE_IMAGE_VIEW,

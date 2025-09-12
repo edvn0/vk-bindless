@@ -1,10 +1,10 @@
 #pragma once
 
-#include "vk-bindless/holder.hpp"
 #include "vk-bindless/forward.hpp"
+#include "vk-bindless/holder.hpp"
 
-#include <string_view>
 #include <array>
+#include <string_view>
 
 namespace VkBindless {
 
@@ -15,15 +15,15 @@ class ImGuiRenderer
   Holder<GraphicsPipelineHandle> graphics_pipeline;
   Holder<TextureHandle> font_texture;
   Holder<SamplerHandle> sampler_clamp_to_edge;
-  float display_scale{1.0F};
-  std::uint32_t frame_index{0};
+  float display_scale{ 1.0F };
+  std::uint32_t frame_index{ 0 };
 
   struct Drawable
   {
     Holder<BufferHandle> vertex_buffer;
     Holder<BufferHandle> index_buffer;
-    std::uint32_t allocated_indices{0};
-        std::uint32_t allocated_vertices{0};
+    std::uint32_t allocated_indices{ 0 };
+    std::uint32_t allocated_vertices{ 0 };
   };
 
   static constexpr auto max_drawables = 3U;
@@ -31,8 +31,11 @@ class ImGuiRenderer
 
   auto create_pipeline(const Framebuffer&) const
     -> Holder<GraphicsPipelineHandle>;
+
 public:
-  explicit ImGuiRenderer(IContext&, std::string_view default_font_ttf = {}, float font_size = 24.0F);
+  explicit ImGuiRenderer(IContext&,
+                         std::string_view default_font_ttf = {},
+                         float font_size = 24.0F);
   ~ImGuiRenderer();
 
   auto update_font(std::string_view, float) -> void;
@@ -40,7 +43,6 @@ public:
   auto begin_frame(const Framebuffer&) -> void;
   auto end_frame(ICommandBuffer&) -> void;
   auto set_display_scale(float) -> void;
-
 };
 
 }

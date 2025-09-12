@@ -65,10 +65,11 @@ struct IContext
 
   [[nodiscard]] virtual auto get_dimensions(TextureHandle handle) const
     -> Dimensions = 0;
-  virtual auto get_device_address(BufferHandle handle) -> std::uint64_t = 0;
-  virtual auto get_mapped_pointer(BufferHandle handle) -> void* = 0;
+  virtual auto get_device_address(BufferHandle handle) const
+    -> std::uint64_t = 0;
+  virtual auto get_mapped_pointer(BufferHandle handle) const -> void* = 0;
   template<typename T>
-  auto get_mapped_pointer(BufferHandle handle) -> std::add_pointer_t<T>
+  auto get_mapped_pointer(BufferHandle handle) const -> std::add_pointer_t<T>
   {
     return static_cast<std::add_pointer_t<T>>(this->get_mapped_pointer(handle));
   }
@@ -102,12 +103,20 @@ struct IContext
   virtual auto get_shader_module_pool() -> ShaderModulePool& = 0;
   virtual auto get_buffer_pool() -> BufferPool& = 0;
 
+  virtual auto update_pipeline(GraphicsPipelineHandle, ShaderModuleHandle)
+    -> bool = 0;
+  virtual auto update_pipeline(ComputePipelineHandle, ShaderModuleHandle)
+    -> bool = 0;
+
   virtual auto acquire_command_buffer() -> ICommandBuffer& = 0;
   virtual auto acquire_immediate_command_buffer() -> CommandBufferWrapper& = 0;
   virtual auto submit(ICommandBuffer&, TextureHandle present)
     -> Expected<SubmitHandle, std::string> = 0;
   virtual auto get_current_swapchain_texture() -> TextureHandle = 0;
   virtual void wait_for(SubmitHandle value) = 0;
+
+  virtual auto on_shader_changed(std::string_view filename,
+                                 GraphicsPipelineHandle) -> void = 0;
 
   auto get_format(TextureHandle handle) -> Format;
 };

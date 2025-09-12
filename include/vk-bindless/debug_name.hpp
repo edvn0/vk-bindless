@@ -4,7 +4,6 @@
 #include <string_view>
 #include <vulkan/vulkan.h>
 
-
 namespace VkBindless {
 
 inline auto

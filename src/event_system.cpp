@@ -10,5 +10,4 @@ EventDispatcher::process_events() -> void
   glfwPollEvents();
 }
 
-
 }

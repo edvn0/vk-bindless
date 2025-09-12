@@ -52,6 +52,7 @@ ImGuiRenderer::create_pipeline(const Framebuffer& fb) const
       context->get_format(fb.depth_stencil.texture) :
       Format::Invalid,
     .cull_mode = CullMode::None,
+    .debug_name = "ImGui"
   });
 }
 
@@ -70,7 +71,7 @@ ImGuiRenderer::ImGuiRenderer(IContext& ctx,
   io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
 
   update_font(default_font_ttf, font_size);
-  gui_shader = VkShader::create(context, "assets/shaders/gui.shader");
+  gui_shader = *VkShader::create(context, "assets/shaders/gui.shader");
   sampler_clamp_to_edge =
     VkTextureSampler::create(*context,
                              {
@@ -82,13 +83,6 @@ ImGuiRenderer::ImGuiRenderer(IContext& ctx,
 
 ImGuiRenderer::~ImGuiRenderer()
 {
-  for (auto& d : drawables) {
-    d.index_buffer = {};
-    d.vertex_buffer = {};
-    d.allocated_indices = 0;
-    d.allocated_vertices = 0;
-  }
-
   const auto& io = ImGui::GetIO();
   io.Fonts->TexID = nullptr;
 #if defined(WITH_IMPLOT)
@@ -150,7 +144,7 @@ ImGuiRenderer::end_frame(ICommandBuffer& command_buffer)
                              .size = dd->TotalIdxCount * sizeof(ImDrawIdx),
                              .storage = StorageType::HostVisible,
                              .usage = BufferUsageFlags::IndexBuffer,
-                             .debug_name = "ImGui: drawable_data.index_buffer",
+                             .debug_name = "ImGui_drawable_data.index_buffer",
                            });
     drawable.allocated_indices = dd->TotalIdxCount;
   }
@@ -163,7 +157,7 @@ ImGuiRenderer::end_frame(ICommandBuffer& command_buffer)
                              .size = dd->TotalVtxCount * sizeof(ImDrawVert),
                              .storage = StorageType::HostVisible,
                              .usage = BufferUsageFlags::StorageBuffer,
-                             .debug_name = "ImGui: drawable.vb_",
+                             .debug_name = "ImGui_drawable.vb_",
                            });
     drawable.allocated_vertices = dd->TotalVtxCount;
   }
@@ -218,13 +212,13 @@ ImGuiRenderer::end_frame(ICommandBuffer& command_buffer)
       struct VulkanImguiBindData
       {
         std::array<float, 4> LRTB{ { L, R, T, B } };
-        std::uint64_t vb = 0;
         std::uint32_t textureId = 0;
         std::uint32_t samplerId = 0;
+        std::uint64_t vb = 0;
       } bindData = {
-        .vb = context->get_device_address(*drawable.vertex_buffer),
         .textureId = static_cast<std::uint32_t>(cmd.TexRef.GetTexID()),
         .samplerId = sampler_clamp_to_edge.index(),
+        .vb = context->get_device_address(*drawable.vertex_buffer),
       };
       command_buffer.cmd_push_constants<VulkanImguiBindData>(bindData, 0);
       command_buffer.cmd_bind_scissor_rect({
@@ -279,7 +273,7 @@ ImGuiRenderer::update_font(const std::string_view ttf_path,
   .mip_levels = 1, 
   .sample_count = VK_SAMPLE_COUNT_1_BIT,
   .tiling = VK_IMAGE_TILING_OPTIMAL,
-  .debug_name ="ImGui Font Texture",
+  .debug_name ="ImGui_Font_Texture",
   });
   io.Fonts->TexID = font_texture.index();
   io.FontDefault = font;

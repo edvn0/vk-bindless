@@ -138,11 +138,6 @@ VkComputePipeline::create(IContext* context,
   return Holder{ context,
                  context->get_compute_pipeline_pool().create(std::move(cps)) };
 }
-auto
-VkGraphicsPipeline::get_stage_flags() const -> VkShaderStageFlags
-{
-  return stage_flags;
-}
 
 auto
 VkGraphicsPipeline::create(IContext* context,
@@ -159,6 +154,7 @@ VkGraphicsPipeline::create(IContext* context,
   }
 
   assert(desc.shader.valid());
+  assert(!desc.debug_name.empty());
 
   VkGraphicsPipeline pipeline{};
   pipeline.description = desc;

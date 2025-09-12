@@ -5,11 +5,11 @@
 #include "vk-bindless/debug_name.hpp"
 #include "vk-bindless/expected.hpp"
 #include "vk-bindless/graphics_context.hpp"
+#include "vk-bindless/handle.hpp"
 #include "vk-bindless/object_pool.hpp"
 #include "vk-bindless/swapchain.hpp"
 #include "vk-bindless/texture.hpp"
 #include "vk-bindless/types.hpp"
-
 
 #include <functional>
 #include <memory>
@@ -46,6 +46,14 @@ public:
               VkFormat format,
               const void* data,
               std::uint32_t bufferRowLength);
+  void upload(VkTexture& image,
+              const void* data,
+              std::size_t data_bytes,
+              std::span<const VkBufferImageCopy> copies);
+  auto upload_blob_with_regions(VkTexture& image,
+                                std::span<const VkBufferImageCopy> regions_in,
+                                const void* blob,
+                                uint32_t blob_size) -> void;
   auto generate_mipmaps(VkTexture&,
                         std::uint32_t width,
                         std::uint32_t height,
@@ -142,14 +150,21 @@ public:
   }
   auto get_buffer_pool() -> BufferPool& override { return buffer_pool; }
 
+  auto update_pipeline(GraphicsPipelineHandle, ShaderModuleHandle)
+    -> bool override;
+  auto update_pipeline(ComputePipelineHandle, ShaderModuleHandle)
+    -> bool override;
+  auto on_shader_changed(const std::string_view name,
+                         GraphicsPipelineHandle handle) -> void override;
+
   auto acquire_command_buffer() -> ICommandBuffer& override;
   auto acquire_immediate_command_buffer() -> CommandBufferWrapper& override;
   auto submit(ICommandBuffer& cmd_buffer, TextureHandle present)
     -> Expected<SubmitHandle, std::string> override;
   auto get_current_swapchain_texture() -> TextureHandle override;
   auto get_dimensions(TextureHandle) const -> Dimensions override;
-  auto get_device_address(BufferHandle) -> std::uint64_t override;
-  auto get_mapped_pointer(BufferHandle) -> void* override;
+  auto get_device_address(BufferHandle) const -> std::uint64_t override;
+  auto get_mapped_pointer(BufferHandle) const -> void* override;
   auto flush_mapped_memory(BufferHandle,
                            std::uint64_t offset,
                            std::uint64_t size) -> void override;
@@ -258,6 +273,9 @@ private:
     -> Expected<void, ContextError>;
   auto create_placeholder_resources() -> void;
   auto update_descriptor_sets() -> Expected<void, ContextError>;
+
+  struct WatchPimpl;
+  std::unique_ptr<WatchPimpl> watch_pimpl;
 
   using base = IContext;
 

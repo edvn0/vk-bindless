@@ -2,12 +2,15 @@
 
 #include "vk-bindless/allocator_interface.hpp"
 #include "vk-bindless/command_buffer.hpp"
+#include "vk-bindless/file_watcher.hpp"
 #include "vk-bindless/handle.hpp"
 #include "vk-bindless/scope_exit.hpp"
+#include "vk-bindless/shader_compilation.hpp"
 #include "vk-bindless/swapchain.hpp"
 #include "vk-bindless/texture.hpp"
 #include "vk-bindless/transitions.hpp"
 
+#include <cstring>
 #include <ostream>
 #include <thread>
 #include <vk_mem_alloc.h>
@@ -88,6 +91,8 @@ format_to_vk_format(const Format format) -> VkFormat
       return VK_FORMAT_R8G8B8A8_UNORM;
     case Format::RGBA_UI32:
       return VK_FORMAT_R32G32B32A32_UINT;
+    case Format::RGBA_UI16:
+      return VK_FORMAT_R16G16B16A16_UINT;
     case Format::RGBA_F16:
       return VK_FORMAT_R16G16B16A16_SFLOAT;
     case Format::RGBA_F32:
@@ -172,6 +177,8 @@ vk_format_to_format(const VkFormat format) -> Format
       return Format::RGBA_UI32;
     case VK_FORMAT_R16G16B16A16_SFLOAT:
       return Format::RGBA_F16;
+    case VK_FORMAT_R16G16B16A16_UINT:
+      return Format::RGBA_UI16;
     case VK_FORMAT_R32G32B32A32_SFLOAT:
       return Format::RGBA_F32;
     case VK_FORMAT_R8G8B8A8_SRGB:
@@ -413,6 +420,11 @@ constexpr VkShaderStageFlags all_stages_flags =
   VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
 }
 
+struct Context::WatchPimpl
+{
+  std::vector<std::unique_ptr<filewatch::FileWatch<std::string>>> watches{};
+};
+
 Context::~Context()
 {
   vkDeviceWaitIdle(vkb_device.device);
@@ -440,7 +452,7 @@ Context::~Context()
   vkDestroyDescriptorPool(vkb_device.device, descriptor_pool, nullptr);
   vkDestroySemaphore(vkb_device.device, timeline_semaphore, nullptr);
 
-  glslang_finalize_process();
+  ShaderParser::destroy_context();
 
   vkb::destroy_device(vkb_device);
   vkb::destroy_surface(vkb_instance, surface);
@@ -501,24 +513,23 @@ logger(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
        const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
        void* /*pUserData*/) -> VkBool32
 {
-  // Convert severity to string
-  auto severityToStr = [](VkDebugUtilsMessageSeverityFlagBitsEXT severity) {
-    switch (severity) {
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
-        return "VERBOSE";
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
-        return "INFO";
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-        return "WARNING";
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-        return "ERROR";
-      default:
-        return "UNKNOWN";
-    }
-  };
+  auto severity_to_string =
+    [](VkDebugUtilsMessageSeverityFlagBitsEXT severity) {
+      switch (severity) {
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+          return "VERBOSE";
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+          return "INFO";
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+          return "WARNING";
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+          return "ERROR";
+        default:
+          return "UNKNOWN";
+      }
+    };
 
-  // Convert message types to string
-  auto typesToStr = [](VkDebugUtilsMessageTypeFlagsEXT types) {
+  auto types_to_str = [](VkDebugUtilsMessageTypeFlagsEXT types) {
     std::string result;
     if (types & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)
       result += "GENERAL|";
@@ -527,41 +538,39 @@ logger(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     if (types & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
       result += "PERFORMANCE|";
     if (!result.empty())
-      result.pop_back(); // Remove trailing '|'
+      result.pop_back();
     return result;
   };
 
-  std::string logMessage = std::format(
+  std::string log_message = std::format(
     "[Vulkan][{}][{}] {} ({}): {}",
-    severityToStr(messageSeverity),
-    typesToStr(messageTypes),
+    severity_to_string(messageSeverity),
+    types_to_str(messageTypes),
     callbackData->pMessageIdName ? callbackData->pMessageIdName : "NoName",
     callbackData->messageIdNumber,
     callbackData->pMessage ? callbackData->pMessage : "NoMessage");
 
-  // Append object info
-  for (uint32_t i = 0; i < callbackData->objectCount; i++) {
-    const auto& obj = callbackData->pObjects[i];
-    logMessage +=
-      std::format("\n    Object[{}]: handle={} type={} name={}",
-                  i,
-                  obj.objectHandle,
-                  static_cast<uint32_t>(obj.objectType), // cast to uint32_t
-                  obj.pObjectName ? obj.pObjectName : "Unnamed");
+  auto object_span =
+    std::span{ callbackData->pObjects, callbackData->objectCount };
+  for (const auto& object : object_span) {
+    log_message +=
+      std::format("\n    Object: handle={} type={} name={}",
+                  object.objectHandle,
+                  static_cast<uint32_t>(object.objectType), // cast to uint32_t
+                  object.pObjectName ? object.pObjectName : "Unnamed");
   }
 
-  // Append command buffer labels
-  for (uint32_t i = 0; i < callbackData->cmdBufLabelCount; i++) {
-    const auto& label = callbackData->pCmdBufLabels[i];
-    logMessage += std::format("\n    CmdBufLabel[{}]: {}",
-                              i,
-                              label.pLabelName ? label.pLabelName : "Unnamed");
+  auto label_span =
+    std::span{ callbackData->pCmdBufLabels, callbackData->cmdBufLabelCount };
+  for (const auto& label : label_span) {
+    log_message += std::format("\n    CmdBufLabel: {}",
+                               label.pLabelName ? label.pLabelName : "Unnamed");
   }
 
 #ifdef IS_DEBUG
-  std::cerr << logMessage << '\n';
+  std::cerr << log_message << '\n';
 #else
-  messages.push(logMessage);
+  messages.push(std::move(log_message));
 #endif
 
   return VK_FALSE; // Don't abort Vulkan call
@@ -625,9 +634,14 @@ Context::create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
     is_headless = true;
   }
 
+  VkPhysicalDeviceFeatures base{};
+  base.geometryShader = VK_TRUE;
+  base.fillModeNonSolid = VK_TRUE;
+  base.multiDrawIndirect = VK_TRUE;
+
   vkb::PhysicalDeviceSelector selector{ vkb_instance, surf };
   auto phys_ret =
-    selector
+    selector.set_required_features(base)
       .set_minimum_version(1, 3) // You can adjust from 1.0 to 1.4 here
       /*  .add_required_extension("VK_KHR_shader_draw_parameters")
         .add_required_extension("VK_EXT_descriptor_indexing")
@@ -812,6 +826,9 @@ Context::create(std::function<VkSurfaceKHR(VkInstance)>&& surface_fn)
       : VK_NULL_HANDLE;
   context->staging_allocator =
     Unique<StagingAllocator>{ new StagingAllocator{ *context } };
+
+  context->watch_pimpl = std::make_unique<WatchPimpl>();
+  std::vector<std::unique_ptr<filewatch::FileWatch<std::string>>> watches{};
 
   context->create_placeholder_resources();
   context->update_resource_bindings();
@@ -1335,7 +1352,8 @@ Context::get_pipeline(ComputePipelineHandle handle) -> VkPipeline
 
   update_resource_bindings();
 
-  if (cps->last_descriptor_set_layout != descriptor_set_layout) {
+  if (cps->new_shader ||
+      cps->last_descriptor_set_layout != descriptor_set_layout) {
     pre_frame_task([l = cps->get_layout()](auto& ctx) {
       vkDestroyPipelineLayout(
         ctx.get_device(), l, ctx.get_allocation_callbacks());
@@ -1346,6 +1364,7 @@ Context::get_pipeline(ComputePipelineHandle handle) -> VkPipeline
     cps->pipeline = VK_NULL_HANDLE;
     cps->layout = VK_NULL_HANDLE;
     cps->last_descriptor_set_layout = descriptor_set_layout;
+    cps->new_shader = false;
   }
 
   if (cps->pipeline == VK_NULL_HANDLE) {
@@ -1365,11 +1384,13 @@ Context::get_pipeline(ComputePipelineHandle handle) -> VkPipeline
                                 descriptor_set_layout,
                                 descriptor_set_layout,
                                 descriptor_set_layout };
+      assert(sm->get_push_constant_info().first <=
+             vulkan_properties.base.limits.maxPushConstantsSize);
       const VkPushConstantRange range = {
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
         .offset = 0,
         .size = static_cast<uint32_t>(
-          get_aligned_size(sm->get_push_constant_info().first, 16)),
+          get_aligned_size(sm->get_push_constant_info().first, 4)),
       };
       const VkPipelineLayoutCreateInfo ci = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -1435,7 +1456,8 @@ Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask)
     return VK_NULL_HANDLE;
   }
 
-  if (rps->last_descriptor_set_layout != descriptor_set_layout ||
+  if (rps->new_shader ||
+      rps->last_descriptor_set_layout != descriptor_set_layout ||
       rps->view_mask != viewMask) {
     pre_frame_task([l = rps->get_layout()](auto& ctx) {
       vkDestroyPipelineLayout(
@@ -1448,6 +1470,7 @@ Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask)
     rps->pipeline = VK_NULL_HANDLE;
     rps->last_descriptor_set_layout = descriptor_set_layout;
     rps->view_mask = viewMask;
+    rps->new_shader = false;
   }
 
   if (rps->pipeline != VK_NULL_HANDLE) {
@@ -1551,13 +1574,11 @@ Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask)
                                            descriptor_set_layout,
                                            descriptor_set_layout,
                                            descriptor_set_layout };
-    auto min_align =
-      vulkan_properties.base.limits.minUniformBufferOffsetAlignment;
-
+    assert(size <= vulkan_properties.base.limits.maxPushConstantsSize);
     const VkPushConstantRange range = {
       .stageFlags = rps->stage_flags,
       .offset = 0,
-      .size = static_cast<uint32_t>(get_aligned_size(size, min_align)),
+      .size = static_cast<uint32_t>(get_aligned_size(size, 4)),
     };
     const VkPipelineLayoutCreateInfo ci = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -1568,13 +1589,12 @@ Context::get_pipeline(GraphicsPipelineHandle handle, std::uint32_t viewMask)
       .pushConstantRangeCount = size ? 1u : 0u,
       .pPushConstantRanges = size ? &range : nullptr,
     };
+    assert(!desc.debug_name.empty());
     vkCreatePipelineLayout(get_device(), &ci, nullptr, &layout);
-    set_name_for_object(
-      get_device(),
-      VK_OBJECT_TYPE_PIPELINE_LAYOUT,
-      layout,
-      std::format("Pipeline_Layout_{}",
-                  !desc.debug_name.empty() ? desc.debug_name : "Unnamed"));
+    set_name_for_object(get_device(),
+                        VK_OBJECT_TYPE_PIPELINE_LAYOUT,
+                        layout,
+                        std::format("Pipeline_Layout_{}", desc.debug_name));
   }
 
   std::array dynamic_states = {
@@ -1756,10 +1776,39 @@ Context::get_dimensions(TextureHandle handle) const -> Dimensions
     extent.depth,
   };
 }
+
 auto
-Context::get_device_address(BufferHandle handle) -> std::uint64_t
+Context::update_pipeline(GraphicsPipelineHandle pipeline,
+                         ShaderModuleHandle shader) -> bool
 {
-  const auto maybe_buffer = get_buffer_pool().get(handle);
+  auto maybe_pipeline = get_graphics_pipeline_pool().get(pipeline);
+  if (!maybe_pipeline)
+    return false;
+
+  auto actual_pipeline = *maybe_pipeline;
+  actual_pipeline->update_shader(shader);
+
+  return true;
+}
+
+auto
+Context::update_pipeline(ComputePipelineHandle pipeline,
+                         ShaderModuleHandle shader) -> bool
+{
+  auto maybe_pipeline = get_compute_pipeline_pool().get(pipeline);
+  if (!maybe_pipeline)
+    return false;
+
+  auto actual_pipeline = *maybe_pipeline;
+  actual_pipeline->update_shader(shader);
+
+  return true;
+}
+
+auto
+Context::get_device_address(BufferHandle handle) const -> std::uint64_t
+{
+  const auto maybe_buffer = buffer_pool.get(handle);
   if (!maybe_buffer.has_value()) {
     std::cerr << "Invalid buffer handle: " << handle.index() << std::endl
               << "Generation: " << handle.generation() << std::endl;
@@ -1780,9 +1829,9 @@ Context::get_device_address(BufferHandle handle) -> std::uint64_t
 }
 
 auto
-Context::get_mapped_pointer(BufferHandle handle) -> void*
+Context::get_mapped_pointer(BufferHandle handle) const -> void*
 {
-  const auto maybe_buffer = get_buffer_pool().get(handle);
+  const auto maybe_buffer = buffer_pool.get(handle);
   if (!maybe_buffer.has_value()) {
     std::cerr << "Invalid buffer handle: " << handle.index() << std::endl
               << "Generation: " << handle.generation() << std::endl;
@@ -1836,7 +1885,7 @@ Context::destroy(const TextureHandle handle) -> void
   {
     if (const auto exp = texture_pool.destroy(handle); !exp.has_value()) {
       std::cerr << "Failed to destroy texture: "
-                << std::to_underlying(exp.error()) << std::endl;
+                << static_cast<std::int32_t>(exp.error()) << std::endl;
     }
     needs_update() = true;
   };
@@ -1853,37 +1902,50 @@ Context::destroy(const TextureHandle handle) -> void
     return;
   }
 
-  // Lets destroy the allocation, the image, the view, the storage view, the
-  // layer/mip views.
-  pre_frame_task([&allocator = get_allocator_implementation(),
-                  img = texture](auto& ctx) {
-    for (const auto view = img->get_mip_layers_image_views();
-         const auto& v : view) {
-      if (VK_NULL_HANDLE != v) {
+  // Destroy mip/layer views
+  for (const auto& v : texture->get_mip_layers_image_views()) {
+    if (v != VK_NULL_HANDLE) {
+      pre_frame_task([v](auto& ctx) {
         vkDestroyImageView(ctx.get_device(), v, ctx.get_allocation_callbacks());
-      }
+      });
     }
+  }
 
-    for (const auto& i : img->get_framebuffer_views()) {
-      if (i != VK_NULL_HANDLE) {
-        vkDestroyImageView(ctx.get_device(), i, ctx.get_allocation_callbacks());
-      }
+  // Destroy framebuffer views
+  for (const auto& fb_view : texture->get_framebuffer_views()) {
+    if (fb_view != VK_NULL_HANDLE) {
+      pre_frame_task([fb_view](auto& ctx) {
+        vkDestroyImageView(
+          ctx.get_device(), fb_view, ctx.get_allocation_callbacks());
+      });
     }
+  }
 
-    vkDestroyImageView(
-      ctx.get_device(), img->get_image_view(), ctx.get_allocation_callbacks());
-    if (const auto storage_view = img->get_storage_image_view())
+  // Destroy main image view
+  if (const auto main_view = texture->get_image_view();
+      main_view != VK_NULL_HANDLE) {
+    pre_frame_task([main_view](auto& ctx) {
+      vkDestroyImageView(
+        ctx.get_device(), main_view, ctx.get_allocation_callbacks());
+    });
+  }
+
+  // Destroy storage image view
+  if (const auto storage_view = texture->get_storage_image_view();
+      storage_view != VK_NULL_HANDLE) {
+    pre_frame_task([storage_view](auto& ctx) {
       vkDestroyImageView(
         ctx.get_device(), storage_view, ctx.get_allocation_callbacks());
-  });
+    });
+  }
 
   if (!texture->owns_self()) {
     return;
   }
 
-  pre_frame_task([&alloc = *allocator_impl, tex = texture->get_image()](auto&) {
-    alloc.deallocate_image(tex);
-  });
+  pre_frame_task(
+    [&alloc = get_allocator_implementation(),
+     tex = texture->get_image()](auto&) { alloc.deallocate_image(tex); });
 }
 
 auto
@@ -1896,12 +1958,42 @@ Context::destroy(const BufferHandle handle) -> void
                 << std::to_underlying(exp.error()) << std::endl;
     }
   };
-  const auto buf = *get_buffer_pool().get(handle);
+  const auto maybe_buf = get_buffer_pool().get(handle);
+  if (!maybe_buf.has_value()) {
+    return;
+  }
+
+  auto buf = *maybe_buf;
   pre_frame_task(
     [&vma = get_allocator_implementation(), buffer = buf->get_buffer()](auto&) {
       vma.deallocate_buffer(buffer);
     });
 }
+
+auto
+Context::on_shader_changed(const std::string_view path,
+                           GraphicsPipelineHandle handle) -> void
+{
+  const auto as_string{ std::string{ path } };
+  watch_pimpl->watches.emplace_back(
+    std::make_unique<filewatch::FileWatch<std::string>>(
+      as_string,
+      [pipe = handle, this](const std::string& path,
+                            const filewatch::Event event) {
+        if (event != filewatch::Event::modified)
+          return;
+
+        auto full_path = std::filesystem::path{ "assets/shaders" } /
+                         std::filesystem::path{ path };
+        auto maybe_parsed =
+          VkBindless::VkShader::create(this, full_path.string());
+        if (!maybe_parsed.has_value()) {
+          return;
+        }
+        auto parsed = maybe_parsed->release();
+        update_pipeline(pipe, parsed);
+      }));
+};
 
 auto
 Context::destroy(QueryPoolHandle) -> void
@@ -2148,7 +2240,7 @@ imageMemoryBarrier2(VkCommandBuffer buffer,
     .subresourceRange = subresourceRange,
   };
 
-  const VkDependencyInfo depInfo = {
+  const VkDependencyInfo dependency_info = {
     .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
     .pNext = nullptr,
     .dependencyFlags = 0,
@@ -2160,7 +2252,7 @@ imageMemoryBarrier2(VkCommandBuffer buffer,
     .pImageMemoryBarriers = &barrier,
   };
 
-  vkCmdPipelineBarrier2(buffer, &depInfo);
+  vkCmdPipelineBarrier2(buffer, &dependency_info);
 }
 
 struct TextureFormatProperties
@@ -2192,6 +2284,7 @@ constexpr auto properties = std::to_array<TextureFormatProperties>({
   { .format = Format::RG_F16, .bytes_per_block = 4 },
   { .format = Format::RG_F32, .bytes_per_block = 8 },
   { .format = Format::RGBA_UN8, .bytes_per_block = 4 },
+  { .format = Format::RGBA_UI16, .bytes_per_block = 8 },
   { .format = Format::RGBA_UI32, .bytes_per_block = 16 },
   { .format = Format::RGBA_F16, .bytes_per_block = 8 },
   { .format = Format::RGBA_F32, .bytes_per_block = 16 },
@@ -2331,7 +2424,7 @@ void
 StagingAllocator::generate_mipmaps(VkTexture& texture,
                                    uint32_t texWidth,
                                    uint32_t texHeight,
-                                   uint32_t mipLevels,
+                                   uint32_t mip_levels,
                                    uint32_t layers)
 {
   const auto& wrapper = context.immediate_commands->acquire();
@@ -2342,32 +2435,47 @@ StagingAllocator::generate_mipmaps(VkTexture& texture,
 
   // --- Step 0: Transition mip 0 to TRANSFER_DST_OPTIMAL ---
   {
-    VkImageMemoryBarrier2 barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
-    barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
-    barrier.srcAccessMask = 0;
-    barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-    barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.image = image;
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = layers;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
+    VkImageMemoryBarrier2 barrier
+    {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2, .pNext = nullptr,
+      .srcStageMask = VK_PIPELINE_STAGE_2_NONE, .srcAccessMask = 0,
+      .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+      .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+      .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
+      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .image = image,
+      .subresourceRange = {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = layers,
+      },
+    };
 
-    VkDependencyInfo depInfo{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
-    depInfo.imageMemoryBarrierCount = 1;
-    depInfo.pImageMemoryBarriers = &barrier;
+    VkDependencyInfo dependency_info{
+      .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+      .pNext = nullptr,
+      .dependencyFlags = 0,
+      .memoryBarrierCount = 0,
+      .pMemoryBarriers = nullptr,
+      .bufferMemoryBarrierCount = 0,
+      .pBufferMemoryBarriers = nullptr,
+      .imageMemoryBarrierCount = 1,
+      .pImageMemoryBarriers = &barrier,
+    };
 
-    vkCmdPipelineBarrier2(wrapper.command_buffer, &depInfo);
+    vkCmdPipelineBarrier2(wrapper.command_buffer, &dependency_info);
   }
 
   // --- Generate each mip ---
-  for (uint32_t i = 1; i < mipLevels; i++) {
+  for (std::uint32_t i = 1; i < mip_levels; i++) {
     // 1. Transition previous mip (i-1) to TRANSFER_SRC_OPTIMAL
     {
-      VkImageMemoryBarrier2 barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+      VkImageMemoryBarrier2 barrier{};
+      barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
       barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
       barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
       barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
@@ -2381,16 +2489,18 @@ StagingAllocator::generate_mipmaps(VkTexture& texture,
       barrier.subresourceRange.baseMipLevel = i - 1;
       barrier.subresourceRange.levelCount = 1;
 
-      VkDependencyInfo depInfo{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
-      depInfo.imageMemoryBarrierCount = 1;
-      depInfo.pImageMemoryBarriers = &barrier;
+      VkDependencyInfo dependency_info{};
+      dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+      dependency_info.imageMemoryBarrierCount = 1;
+      dependency_info.pImageMemoryBarriers = &barrier;
 
-      vkCmdPipelineBarrier2(wrapper.command_buffer, &depInfo);
+      vkCmdPipelineBarrier2(wrapper.command_buffer, &dependency_info);
     }
 
     // 2. Transition current mip (i) to TRANSFER_DST_OPTIMAL
     {
-      VkImageMemoryBarrier2 barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+      VkImageMemoryBarrier2 barrier{};
+      barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
       barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
       barrier.srcAccessMask = 0;
       barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
@@ -2404,11 +2514,12 @@ StagingAllocator::generate_mipmaps(VkTexture& texture,
       barrier.subresourceRange.baseMipLevel = i;
       barrier.subresourceRange.levelCount = 1;
 
-      VkDependencyInfo depInfo{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
-      depInfo.imageMemoryBarrierCount = 1;
-      depInfo.pImageMemoryBarriers = &barrier;
+      VkDependencyInfo dependency_info{};
+      dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+      dependency_info.imageMemoryBarrierCount = 1;
+      dependency_info.pImageMemoryBarriers = &barrier;
 
-      vkCmdPipelineBarrier2(wrapper.command_buffer, &depInfo);
+      vkCmdPipelineBarrier2(wrapper.command_buffer, &dependency_info);
     }
 
     // 3. Blit previous mip (i-1) -> current mip (i)
@@ -2431,7 +2542,8 @@ StagingAllocator::generate_mipmaps(VkTexture& texture,
 
     // 4. Transition previous mip to SHADER_READ_ONLY_OPTIMAL
     {
-      VkImageMemoryBarrier2 barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+      VkImageMemoryBarrier2 barrier{};
+      barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
       barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
       barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
       barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
@@ -2445,11 +2557,12 @@ StagingAllocator::generate_mipmaps(VkTexture& texture,
       barrier.subresourceRange.baseMipLevel = i - 1;
       barrier.subresourceRange.levelCount = 1;
 
-      VkDependencyInfo depInfo{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
-      depInfo.imageMemoryBarrierCount = 1;
-      depInfo.pImageMemoryBarriers = &barrier;
+      VkDependencyInfo dependency_info{};
+      dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+      dependency_info.imageMemoryBarrierCount = 1;
+      dependency_info.pImageMemoryBarriers = &barrier;
 
-      vkCmdPipelineBarrier2(wrapper.command_buffer, &depInfo);
+      vkCmdPipelineBarrier2(wrapper.command_buffer, &dependency_info);
     }
 
     // Reduce mip width/height for next iteration
@@ -2459,7 +2572,8 @@ StagingAllocator::generate_mipmaps(VkTexture& texture,
 
   // --- Transition last mip to SHADER_READ_ONLY_OPTIMAL ---
   {
-    VkImageMemoryBarrier2 barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+    VkImageMemoryBarrier2 barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
     barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
     barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
     barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
@@ -2470,32 +2584,101 @@ StagingAllocator::generate_mipmaps(VkTexture& texture,
     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = layers;
-    barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+    barrier.subresourceRange.baseMipLevel = mip_levels - 1;
     barrier.subresourceRange.levelCount = 1;
 
-    VkDependencyInfo depInfo{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
-    depInfo.imageMemoryBarrierCount = 1;
-    depInfo.pImageMemoryBarriers = &barrier;
+    VkDependencyInfo dependency_info{};
+    dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dependency_info.imageMemoryBarrierCount = 1;
+    dependency_info.pImageMemoryBarriers = &barrier;
 
-    vkCmdPipelineBarrier2(wrapper.command_buffer, &depInfo);
+    vkCmdPipelineBarrier2(wrapper.command_buffer, &dependency_info);
   }
 
   // Submit command buffer and wait
   context.immediate_commands->wait(context.immediate_commands->submit(wrapper));
 }
 
+auto
+StagingAllocator::upload_blob_with_regions(
+  VkTexture& image,
+  std::span<const VkBufferImageCopy> regions_in,
+  const void* blob,
+  uint32_t blob_size) -> void
+{
+  ensure_size(blob_size);
+  auto desc = get_next_free_offset(blob_size);
+  if (desc.size < blob_size) {
+    wait_and_reset();
+    desc = get_next_free_offset(blob_size);
+  }
+
+  auto* staging = *context.get_buffer_pool().get(staging_buffer);
+  staging->upload(std::span(static_cast<const std::byte*>(blob), blob_size),
+                  desc.offset);
+
+  std::vector<VkBufferImageCopy> copy_regions;
+  copy_regions.reserve(regions_in.size());
+  for (const auto& r : regions_in) {
+    auto rr = r;
+    rr.bufferOffset += desc.offset;
+    copy_regions.push_back(rr);
+  }
+
+  const auto& w = context.immediate_commands->acquire();
+
+  VkImageSubresourceRange range{};
+  range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  range.baseMipLevel = 0;
+  range.levelCount = image.get_mip_levels();
+  range.baseArrayLayer = 0;
+  range.layerCount = image.get_array_layers();
+
+  imageMemoryBarrier2(
+    w.command_buffer,
+    image.get_image(),
+    { VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, VK_ACCESS_2_NONE },
+    { VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT },
+    image.get_layout() == VK_IMAGE_LAYOUT_UNDEFINED ? VK_IMAGE_LAYOUT_UNDEFINED
+                                                    : image.get_layout(),
+    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    range);
+
+  vkCmdCopyBufferToImage(w.command_buffer,
+                         staging->get_buffer(),
+                         image.get_image(),
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         static_cast<uint32_t>(copy_regions.size()),
+                         copy_regions.data());
+
+  imageMemoryBarrier2(
+    w.command_buffer,
+    image.get_image(),
+    { VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT },
+    { VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+      VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT },
+    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    range);
+
+  image.set_layout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+  desc.handle = context.immediate_commands->submit(w);
+  this->regions.push_back(desc);
+}
+
 void
 StagingAllocator::upload(VkTexture& image,
                          const VkRect2D& imageRegion,
                          std::uint32_t baseMipLevel,
-                         std::uint32_t numMipLevels,
+                         std::uint32_t nummip_levels,
                          std::uint32_t layer,
-                         std::uint32_t numLayers,
+                         std::uint32_t num_layers,
                          VkFormat format,
                          const void* data,
                          std::uint32_t bufferRowLength)
 {
-  // assert(numMipLevels <= LVK_MAX_MIP_LEVELS);
+  // assert(nummip_levels <= LVK_MAX_MIP_LEVELS);
 
   const Format texFormat = vk_format_to_format(format);
 
@@ -2510,14 +2693,14 @@ StagingAllocator::upload(VkTexture& image,
   // LVK_ASSERT(coversFullImage || image.vkImageLayout_ !=
   // VK_IMAGE_LAYOUT_UNDEFINED);
 
-  if (numMipLevels > 1 || numLayers > 1) {
+  if (nummip_levels > 1 || num_layers > 1) {
     assert(!bufferRowLength);
     assert(coversFullImage);
   }
 
   // find the storage size for all mip-levels being uploaded
   std::uint32_t layerStorageSize = 0;
-  for (std::uint32_t i = 0; i < numMipLevels; ++i) {
+  for (std::uint32_t i = 0; i < nummip_levels; ++i) {
     const std::uint32_t mipSize = get_texture_bytes_per_layer(
       bufferRowLength ? bufferRowLength : imageRegion.extent.width,
       imageRegion.extent.height,
@@ -2526,28 +2709,28 @@ StagingAllocator::upload(VkTexture& image,
     layerStorageSize += mipSize;
   }
 
-  const std::uint32_t storageSize = layerStorageSize * numLayers;
+  const std::uint32_t storage_size = layerStorageSize * num_layers;
 
-  ensure_size(storageSize);
+  ensure_size(storage_size);
 
-  assert(storageSize <= staging_buffer_size);
+  assert(storage_size <= staging_buffer_size);
 
-  auto desc = get_next_free_offset(storageSize);
+  auto desc = get_next_free_offset(storage_size);
   // No support for copying image in multiple smaller chunk sizes. If we get
-  // smaller buffer size than storageSize, we will wait for GPU idle and get
+  // smaller buffer size than storage_size, we will wait for GPU idle and get
   // bigger chunk.
-  if (desc.size < storageSize) {
+  if (desc.size < storage_size) {
     wait_and_reset();
-    desc = get_next_free_offset(storageSize);
+    desc = get_next_free_offset(storage_size);
   }
-  assert(desc.size >= storageSize);
+  assert(desc.size >= storage_size);
 
   const auto& wrapper = context.immediate_commands->acquire();
 
   auto* stagingBuffer = *context.get_buffer_pool().get(staging_buffer);
 
   stagingBuffer->upload(
-    std::span(static_cast<const std::byte*>(data), storageSize), desc.offset);
+    std::span(static_cast<const std::byte*>(data), storage_size), desc.offset);
 
   std::uint32_t offset = 0;
 
@@ -2555,7 +2738,7 @@ StagingAllocator::upload(VkTexture& image,
 
   // if (numPlanes > 1) {
   //   LVK_ASSERT(layer == 0 && baseMipLevel == 0);
-  //   LVK_ASSERT(numLayers == 1 && numMipLevels == 1);
+  //   LVK_ASSERT(num_layers == 1 && nummip_levels == 1);
   //   LVK_ASSERT(imageRegion.offset.x == 0 && imageRegion.offset.y == 0);
   //   LVK_ASSERT(image.vkType_ == VK_IMAGE_TYPE_2D);
   //   LVK_ASSERT(image.vkExtent_.width == imageRegion.extent.width &&
@@ -2573,8 +2756,8 @@ StagingAllocator::upload(VkTexture& image,
   }
 
   // https://registry.khronos.org/KTX/specs/1.0/ktxspec.v1.html
-  for (std::uint32_t mipLevel = 0; mipLevel < numMipLevels; ++mipLevel) {
-    for (std::uint32_t l = 0; l != numLayers; l++) {
+  for (std::uint32_t mipLevel = 0; mipLevel < nummip_levels; ++mipLevel) {
+    for (std::uint32_t l = 0; l != num_layers; l++) {
       const std::uint32_t currentMipLevel = baseMipLevel + mipLevel;
 
       // LVK_ASSERT(currentMipLevel < image.numLevels_);
@@ -2677,6 +2860,71 @@ StagingAllocator::upload(VkTexture& image,
 }
 
 void
+StagingAllocator::upload(VkTexture& image,
+                         const void* data,
+                         std::size_t data_bytes,
+                         std::span<const VkBufferImageCopy> copies)
+{
+  ensure_size(static_cast<std::uint32_t>(data_bytes));
+
+  auto desc = get_next_free_offset(static_cast<std::uint32_t>(data_bytes));
+  if (desc.size < data_bytes) {
+    wait_and_reset();
+    desc = get_next_free_offset(static_cast<std::uint32_t>(data_bytes));
+  }
+
+  auto* real_buffer = *context.get_buffer_pool().get(*this->staging_buffer);
+  real_buffer->upload(
+    std::span(static_cast<const std::byte*>(data), data_bytes), desc.offset);
+
+  const auto& wrapper = context.immediate_commands->acquire();
+
+  VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+
+  // Transition all subresources to TRANSFER_DST
+  imageMemoryBarrier2(
+    wrapper.command_buffer,
+    image.get_image(),
+    { VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, VK_ACCESS_2_NONE },
+    { VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT },
+    VK_IMAGE_LAYOUT_UNDEFINED,
+    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    VkImageSubresourceRange{
+      aspect, 0, image.get_mip_levels(), 0, image.get_array_layers() });
+
+  std::vector<VkBufferImageCopy> patched;
+  patched.reserve(copies.size());
+  for (const auto& c : copies) {
+    VkBufferImageCopy pc = c;
+    pc.bufferOffset += desc.offset;
+    patched.push_back(pc);
+  }
+
+  vkCmdCopyBufferToImage(wrapper.command_buffer,
+                         real_buffer->get_buffer(),
+                         image.get_image(),
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         static_cast<uint32_t>(patched.size()),
+                         patched.data());
+
+  imageMemoryBarrier2(
+    wrapper.command_buffer,
+    image.get_image(),
+    { VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT },
+    { VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+      VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT },
+    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    VkImageSubresourceRange{
+      aspect, 0, image.get_mip_levels(), 0, image.get_array_layers() });
+
+  image.set_layout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+  desc.handle = context.immediate_commands->submit(wrapper);
+  regions.push_back(desc);
+}
+
+void
 StagingAllocator::ensure_size(std::uint32_t size_needed)
 {
   const auto alignedSize = std::max(
@@ -2728,8 +2976,9 @@ StagingAllocator::ensure_size(std::uint32_t size_needed)
   regions.push_back({ 0, staging_buffer_size, SubmitHandle() });
 }
 
-StagingAllocator::MemoryRegionDescription
+auto
 StagingAllocator::get_next_free_offset(uint32_t size)
+  -> StagingAllocator::MemoryRegionDescription
 {
   const auto requestedAlignedSize =
     get_aligned_size(size, staging_buffer_alignment);

@@ -1,173 +1,131 @@
 #pragma once
 
-#include "vk-bindless/expected.hpp"
+#include "vk-bindless/buffer.hpp"
+#include "vk-bindless/common.hpp"
+#include "vk-bindless/container.hpp"
+#include "vk-bindless/forward.hpp"
 #include "vk-bindless/handle.hpp"
 #include "vk-bindless/holder.hpp"
-#include <glm/glm.hpp>
-#include <memory>
-#include <span>
-#include <string>
-#include <vector>
+#include "vk-bindless/material.hpp"
 
-struct aiMesh;
-struct aiScene;
+#include <array>
+#include <cstdint>
+#include <filesystem>
+#include <ktx.h>
+#include <string>
+#include <string_view>
+#include <unordered_set>
+#include <vector>
 
 namespace VkBindless {
 
-struct Material
-{
-  static constexpr std::uint32_t white_texture = 0;
+constexpr std::uint32_t max_lods{ 8 };
 
-  std::uint32_t albedo_texture{ white_texture };
-};
+using IndexType = std::uint32_t;
 
-struct Vertex
+struct Mesh final
 {
-  glm::vec3 position;
-  glm::vec3 normal;
-  glm::vec2 texcoord;
-};
+  std::uint32_t lod_count{ 1 };
+  std::uint32_t index_offset{ 0 };
+  std::uint32_t vertex_offset{ 0 };
+  std::uint32_t vertex_count{ 0 };
+  std::uint32_t material_id{ 0 };
 
-struct ShadowVertex
-{
-  glm::vec3 position;
-};
+  std::array<std::uint32_t, max_lods + 1> lod_offset{};
 
-struct LodInfo
-{
-  std::uint32_t index_offset;
-  std::uint32_t index_count;
-  float target_error;
+  auto get_lod_indices_count(std::unsigned_integral auto lod_index) const
+  {
+    return lod_index < lod_count
+             ? lod_offset.at(lod_index + 1) - lod_offset.at(lod_index)
+             : 0;
+  }
 };
 
 enum class LoadedTextureType : std::uint8_t
 {
-  Albedo,
-  Normal,
-};
-struct LoadedImage
-{
-  LoadedTextureType type;
-  std::int32_t width;
-  std::int32_t height;
-  std::vector<std::uint8_t> rgba;
+  Emissive,
+  Diffuse,
+  Normals,
+  Height,
+  Opacity,
 };
 
-struct MeshData
+struct ProcessedTexture
 {
-  std::vector<Vertex> vertices;
-  std::vector<ShadowVertex> shadow_vertices;
-  std::vector<std::uint32_t> indices;
-  std::vector<LodInfo> lod_levels;
-  std::vector<LodInfo> shadow_lod_levels; // Multiple shadow LOD levels
-
-  Material material{};
-
-  std::vector<LoadedImage> loaded_textures{};
-};
-
-class LodGenerator
-{
-private:
-  // PIMPL idiom to hide dependencies
-  struct Impl;
-  std::unique_ptr<Impl> pimpl;
-
-  IContext* context{ nullptr };
-
-public:
-  explicit LodGenerator(IContext&);
-  ~LodGenerator();
-
-  // Move-only semantics
-  LodGenerator(const LodGenerator&) = delete;
-  LodGenerator& operator=(const LodGenerator&) = delete;
-  LodGenerator(LodGenerator&&) noexcept;
-  LodGenerator& operator=(LodGenerator&&) noexcept;
-
-  // Public interface - no assimp/meshopt types exposed
-  auto process_mesh_from_data(std::span<const glm::vec3> positions,
-                              std::span<const glm::vec3> normals,
-                              std::span<const glm::vec2> texcoords,
-                              std::span<const std::uint32_t> indices)
-    -> MeshData;
-
-  // Load from file - completely hides assimp
-  auto load_model(std::string_view filename) -> std::vector<MeshData>;
-
-  // Get the final buffers for GPU upload
-  auto get_global_index_buffer() const -> std::span<const std::uint32_t>;
-  auto get_global_shadow_index_buffer() const -> std::span<const std::uint32_t>;
-
-  // Clear buffers (call between different models)
-  auto clear_buffers() -> void;
-
-  // Get buffer sizes for allocation
-  [[nodiscard]] auto get_index_buffer_size_bytes() const -> std::size_t;
-  [[nodiscard]] auto get_shadow_index_buffer_size_bytes() const -> std::size_t;
-
-  // Configuration
-  struct LodConfig
+  struct Destructor
   {
-    std::vector<float> target_errors = { 0.01f, 0.05f, 0.1f, 0.2f };
-    std::vector<float> shadow_target_errors = { 0.1f, 0.3f, 0.6f };
-    float shadow_error_threshold = 0.2f;
-    float shadow_reduction_factor = 4.0f;
-    float overdraw_threshold = 1.05f;
+    auto operator()(ktxTexture2* ptr) const -> void
+    {
+      ktxTexture_Destroy(ktxTexture(ptr));
+    }
   };
-
-  auto set_lod_config(const LodConfig& config) -> void;
-
-private:
-  // Internal methods that work with assimp (hidden in implementation)
-  auto process_assimp_mesh(const aiScene*, const aiMesh*) -> MeshData;
+  std::unique_ptr<ktxTexture2, Destructor> ktx_texture{ nullptr, Destructor{} };
+  std::string debug_name;
+  std::uint32_t width;
+  std::uint32_t height;
+  std::uint32_t mip_levels;
 };
 
-class Mesh
+struct MeshData final
 {
-  Holder<BufferHandle> vertex_buffer;
-  Holder<BufferHandle> shadow_vertex_buffer;
-  Holder<BufferHandle> lod_index_buffer;
-  Holder<BufferHandle> lod_shadow_index_buffer;
+  VertexInput vertex_streams{};
 
-  std::unique_ptr<MeshData> mesh_data;
+  std::vector<IndexType> index_data{};
+  std::vector<std::uint8_t> vertex_data{};
+
+  std::vector<Mesh> meshes{};
+  std::vector<BoundingBox> aabbs{};
+  std::vector<Material> materials{};
+  std::vector<ProcessedTexture> textures;
+  std::vector<ProcessedTexture> opacity_textures;
+};
+
+struct MeshFileHeader
+{
+  static constexpr auto magic_header = 0x46696E65U;
+
+  std::uint32_t magic_bytes = magic_header; // 'Fine' in ASCII.
+  std::uint32_t mesh_count{ 0 };
+  std::size_t index_data_size{ 0 };
+  std::size_t vertex_data_size{ 0 };
+};
+
+class MeshFile
+{
+  MeshFileHeader header;
+  MeshData mesh_data;
 
 public:
-  [[nodiscard]] auto get_vertex_buffer() const { return *vertex_buffer; }
-  [[nodiscard]] auto get_shadow_vertex_buffer() const
-  {
-    return *shadow_vertex_buffer;
-  }
-  [[nodiscard]] auto get_index_buffer() const { return *lod_index_buffer; }
-  [[nodiscard]] auto get_shadow_index_buffer() const
-  {
-    return *lod_shadow_index_buffer;
-  }
-  [[nodiscard]] auto get_mesh_data() const -> const auto& { return *mesh_data; }
-  [[nodiscard]] auto get_index_binding_data(const std::size_t lod_index) const
-  {
-    auto& data = mesh_data->lod_levels.at(lod_index);
-    return std::make_pair(data.index_count, data.index_offset);
-  }
-  [[nodiscard]] auto get_shadow_index_binding_data(
-    const std::size_t lod_index) const
-  {
-    auto& data = mesh_data->shadow_lod_levels.at(lod_index);
-    return std::make_pair(data.index_count, data.index_offset);
-  }
-  [[nodiscard]] auto get_lod_count() const -> std::size_t
-  {
-    return mesh_data->lod_levels.size();
-  }
-  [[nodiscard]] auto get_shadow_lod_count() const -> std::size_t
-  {
-    return mesh_data->shadow_lod_levels.size();
-  }
+  [[nodiscard]] auto get_header() const -> const auto& { return header; }
+  [[nodiscard]] auto get_data() const -> const auto& { return mesh_data; }
+  [[nodiscard]] auto get_data() -> auto& { return mesh_data; }
 
-  auto start_async_load_textures(IContext&) -> void;
+  static auto create(IContext&, const std::filesystem::path&)
+    -> std::expected<MeshFile, std::string>;
+  static auto preload_mesh(const std::filesystem::path&,
+                           const std::filesystem::path& cache_directory = {
+                             "assets/.mesh_cache" }) -> bool;
+};
 
-  static auto create(IContext&, std::string_view)
-    -> Expected<Mesh, std::string>;
+class VkMesh final
+{
+  using BufferHolder = Holder<BufferHandle>;
+  BufferHolder index_buffer;
+  BufferHolder vertex_buffer;
+  BufferHolder material_remap_buffer;
+  std::unique_ptr<IndirectBuffer> indirect_buffer;
+  BufferHolder materials;
+  Holder<ShaderModuleHandle> shader;
+  Holder<GraphicsPipelineHandle> pipeline;
+
+  std::uint32_t index_count{ 0 };
+
+public:
+  VkMesh(IContext&, const MeshFile&);
+  auto draw(ICommandBuffer&, const MeshFile&, std::span<const std::byte>)
+    -> void;
+  auto get_material_buffer_handle(const IContext&) const -> std::uint64_t;
+  auto get_material_remap_buffer_handle(const IContext&) const -> std::uint64_t;
 };
 
 }
